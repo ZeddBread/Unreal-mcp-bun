@@ -75,6 +75,7 @@ WebAssembly (WASM) is a binary instruction format for a stack-based virtual mach
 #### Rust → WebAssembly
 
 **Why Rust?**
+
 - Excellent WebAssembly support via `wasm-bindgen`
 - Memory safety without garbage collection
 - Zero-cost abstractions
@@ -82,6 +83,7 @@ WebAssembly (WASM) is a binary instruction format for a stack-based virtual mach
 - Great tooling (`cargo`, `wasm-pack`)
 
 **Alternative Options:**
+
 - **C/C++**: Direct compilation to WebAssembly
   - Pros: Mature ecosystem, direct control
   - Cons: Manual memory management, more complex build setup
@@ -345,13 +347,13 @@ fn main() {
 }
 ```
 
-#### 6.3 NPM Build Script
+#### 6.3 bun Build Script
 
 ```json
 {
   "scripts": {
     "build:wasm": "wasm-pack build wasm --target web --out-dir src/wasm/pkg",
-    "build": "npm run build:wasm && tsc",
+    "build": "bun run build:wasm && tsc",
     "dev:wasm": "wasm-pack build wasm --target web --out-dir src/wasm/pkg --watch",
     "test:wasm": "cd wasm && cargo test"
   }
@@ -501,17 +503,20 @@ describe('WASM Integration', () => {
 #### 10.1 Build Pipeline
 
 1. **Rust Compilation**
+
    ```bash
    wasm-pack build --release --target web
    ```
 
 2. **Binary Optimization**
+
    ```bash
    # Strip debug info
    wasm-strip pkg/unreal_mcp_wasm_bg.wasm
    ```
 
 3. **TypeScript Compilation**
+
    ```bash
    tsc --project tsconfig.json
    ```
@@ -574,18 +579,21 @@ class WASMPerformanceMonitor {
 ### 12. Migration Plan
 
 #### Phase 1: Core Operations (Weeks 1-2)
+
 - Implement property parser
 - Add transform calculations
 - Create Rust tests
 - Add TypeScript integration
 
 #### Phase 2: Advanced Features (Weeks 3-4)
+
 - Implement dependency resolver
 - Add batch operations
 - Optimize memory usage
 - Add performance monitoring
 
 #### Phase 3: Testing and Optimization (Week 5)
+
 - Comprehensive testing
 - Performance benchmarking
 - Bug fixes
@@ -594,15 +602,19 @@ class WASMPerformanceMonitor {
 ### 13. Risks and Mitigations
 
 #### Risk 1: WASM Loading Failures
+
 **Mitigation**: Robust fallback to TypeScript implementations
 
 #### Risk 2: Performance Regression
+
 **Mitigation**: Comprehensive benchmarking and monitoring
 
 #### Risk 3: Binary Size Bloat
+
 **Mitigation**: Careful feature selection, tree shaking, compression
 
 #### Risk 4: Compatibility Issues
+
 **Mitigation**: Feature detection, polyfills, graceful degradation
 
 ### 14. Success Metrics

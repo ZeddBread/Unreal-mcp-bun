@@ -1,7 +1,7 @@
 # Unreal Engine MCP Server
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![NPM Package](https://img.shields.io/npm/v/unreal-engine-mcp-server)](https://www.npmjs.com/package/unreal-engine-mcp-server)
+[![npm Package](https://img.shields.io/npm/v/unreal-engine-mcp-server)](https://www.npmjs.com/package/unreal-engine-mcp-server)
 [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-TypeScript-blue)](https://github.com/modelcontextprotocol/sdk)
 [![Unreal Engine](https://img.shields.io/badge/Unreal%20Engine-5.0--5.7-orange)](https://www.unrealengine.com/)
 [![MCP Registry](https://img.shields.io/badge/MCP%20Registry-Published-green)](https://registry.modelcontextprotocol.io/)
@@ -66,16 +66,18 @@ A comprehensive Model Context Protocol (MCP) server that enables AI assistants t
 ### Step 1: Install MCP Server
 
 **Option A: NPX (Recommended)**
+
 ```bash
 npx unreal-engine-mcp-server
 ```
 
 **Option B: Clone & Build**
+
 ```bash
 git clone https://github.com/ChiR24/Unreal_mcp.git
 cd Unreal_mcp
-npm install
-npm run build
+bun install
+bun run build
 node dist/cli.js
 ```
 
@@ -84,20 +86,23 @@ node dist/cli.js
 The MCP Automation Bridge plugin is included at `Unreal_mcp/plugins/McpAutomationBridge`.
 
 **Method 1: Copy Folder**
+
 ```
 Copy:  Unreal_mcp/plugins/McpAutomationBridge/
 To:    YourUnrealProject/Plugins/McpAutomationBridge/
 ```
+
 Regenerate project files after copying.
 
 **Method 2: Add in Editor**
+
 1. Open Unreal Editor → **Edit → Plugins**
 2. Click **"Add"** → Browse to `Unreal_mcp/plugins/`
 3. Select the `McpAutomationBridge` folder
 
 **Video Guide:**
 
-https://github.com/user-attachments/assets/d8b86ebc-4364-48c9-9781-de854bf3ef7d
+<https://github.com/user-attachments/assets/d8b86ebc-4364-48c9-9781-de854bf3ef7d>
 
 ### Step 3: Enable Required Plugins
 
@@ -118,6 +123,7 @@ Enable via **Edit → Plugins**, then restart the editor:
 Add to your Claude Desktop / Cursor config file:
 
 **Using Clone/Build:**
+
 ```json
 {
   "mcpServers": {
@@ -134,6 +140,7 @@ Add to your Claude Desktop / Cursor config file:
 ```
 
 **Using NPX:**
+
 ```json
 {
   "mcpServers": {
@@ -232,7 +239,7 @@ Optional WASM acceleration for computationally intensive operations. **Enabled b
 
 ```bash
 cargo install wasm-pack  # Once per machine
-npm run build:wasm       # Builds  WASM
+bun run build:wasm       # Builds  WASM
 ```
 
 To disable: `WASM_ENABLED=false`
@@ -279,10 +286,10 @@ docker run -it --rm -e UE_PROJECT_PATH=/project unreal-mcp
 ## Development
 
 ```bash
-npm run build       # Build TypeScript + WASM
-npm run lint        # Run ESLint
-npm run test:unit   # Run unit tests
-npm run test:all    # Run all tests
+bun run build       # Build TypeScript + WASM
+bun run lint        # Run ESLint
+bun run test:unit   # Run unit tests
+bun run test:all    # Run all tests
 ```
 
 ---
@@ -300,6 +307,7 @@ npm run test:all    # Run all tests
 ## Contributing
 
 Contributions welcome! Please:
+
 - Include reproduction steps for bugs
 - Keep PRs focused and small
 - Follow existing code style

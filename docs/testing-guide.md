@@ -3,6 +3,7 @@
 ## Overview
 
 This project uses consolidated integration test suites covering all MCP tools:
+
 - **Core Suite** (17 original tools, 44 scenarios)
 - **Advanced Suite** (15 new Phase 6-20 tools, 80 scenarios)
 
@@ -12,11 +13,11 @@ Plus Vitest for unit tests and a CI smoke test for mock-mode validation.
 
 | Command | Description | Requires UE? |
 |---------|-------------|--------------|
-| `npm test` | Run core integration suite | Yes |
-| `npm run test:advanced` | Run advanced integration suite (Phases 6-20) | Yes |
-| `npm run test:all` | Run both integration suites | Yes |
-| `npm run test:unit` | Run Vitest unit tests | No |
-| `npm run test:smoke` | CI smoke test (mock mode) | No |
+| `bun test` | Run core integration suite | Yes |
+| `bun run test:advanced` | Run advanced integration suite (Phases 6-20) | Yes |
+| `bun run test:all` | Run both integration suites | Yes |
+| `bun run test:unit` | Run Vitest unit tests | No |
+| `bun run test:smoke` | CI smoke test (mock mode) | No |
 
 ## Integration Tests
 
@@ -24,14 +25,15 @@ Plus Vitest for unit tests and a CI smoke test for mock-mode validation.
 
 ```bash
 # Ensure Unreal Engine is running with MCP Automation Bridge plugin enabled
-npm test              # Core suite (44 tests)
-npm run test:advanced # Advanced suite (80 tests)
-npm run test:all      # Both suites (124 tests)
+bun test              # Core suite (44 tests)
+bun run test:advanced # Advanced suite (80 tests)
+bun run test:all      # Both suites (124 tests)
 ```
 
 ### Core Suite (`tests/integration.mjs`)
 
 Covers 44 scenarios across the original 17 tool categories:
+
 - Infrastructure & Discovery
 - Asset & Material Lifecycle
 - Actor Control & Introspection
@@ -44,6 +46,7 @@ Covers 44 scenarios across the original 17 tool categories:
 ### Advanced Suite (`tests/integration-advanced.mjs`)
 
 Covers 80 scenarios across the 15 new Phase 6-20 tools:
+
 - Phase 6: Geometry & Mesh Creation (`manage_geometry`)
 - Phase 7: Skeletal Mesh & Rigging (`manage_skeleton`)
 - Phase 8: Advanced Material Authoring (`manage_material_authoring`)
@@ -84,6 +87,7 @@ Edit `tests/integration.mjs` and add a test case to the `testCases` array:
 ```
 
 The `expected` field supports flexible matching:
+
 - `'success'` — response must have `success: true`
 - `'success|not found'` — either success OR "not found" in response
 - `'error'` — expects failure
@@ -91,6 +95,7 @@ The `expected` field supports flexible matching:
 ### Test Output
 
 Console shows pass/fail status with timing:
+
 ```
 [PASSED] Asset: create test folder (234.5 ms)
 [PASSED] Actor: spawn StaticMeshActor (456.7 ms)
@@ -102,19 +107,20 @@ JSON reports are saved to `tests/reports/` with timestamps.
 ## Unit Tests
 
 ```bash
-npm run test:unit        # Run once
-npm run test:unit:watch  # Watch mode
-npm run test:unit:coverage  # With coverage
+bun run test:unit        # Run once
+bun run test:unit:watch  # Watch mode
+bun run test:unit:coverage  # With coverage
 ```
 
 Unit tests use Vitest and don't require Unreal Engine. They cover:
+
 - Utility functions (`normalize.ts`, `validation.ts`, `safe-json.ts`)
 - Pure TypeScript logic
 
 ## CI Smoke Test
 
 ```bash
-MOCK_UNREAL_CONNECTION=true npm run test:smoke
+MOCK_UNREAL_CONNECTION=true bun run test:smoke
 ```
 
 Runs in GitHub Actions on every push/PR. Uses mock mode to validate server startup and basic tool registration without an actual Unreal connection.
@@ -122,10 +128,12 @@ Runs in GitHub Actions on every push/PR. Uses mock mode to validate server start
 ## Prerequisites
 
 ### Unreal Engine Setup
+
 1. **Unreal Engine 5.0–5.7** must be running
 2. **MCP Automation Bridge plugin** enabled and listening on port 8091
 
 ### Environment Variables (optional)
+
 ```bash
 MCP_AUTOMATION_HOST=127.0.0.1  # Default
 MCP_AUTOMATION_PORT=8091       # Default
@@ -134,16 +142,19 @@ MCP_AUTOMATION_PORT=8091       # Default
 ## Troubleshooting
 
 ### All Tests Fail with ECONNREFUSED
+
 - Unreal Engine is not running, or
 - MCP Automation Bridge plugin is not enabled, or
 - Port 8091 is blocked
 
 ### Specific Tests Fail
+
 - Check Unreal Output Log for errors
 - Verify the asset/actor/level referenced in the test exists
 - Some tests create temporary assets in `/Game/IntegrationTest` (cleaned up at end)
 
 ### Test Times Out
+
 - Default timeout is 30 seconds per test
 - Complex operations (lighting builds, large imports) may need longer
 - Check if Unreal is frozen or unresponsive
@@ -154,6 +165,7 @@ MCP_AUTOMATION_PORT=8091       # Default
 - `1` — One or more tests failed
 
 Use in CI/CD:
+
 ```bash
-npm test && echo "All tests passed"
+bun test && echo "All tests passed"
 ```

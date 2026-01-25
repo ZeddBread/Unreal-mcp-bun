@@ -18,20 +18,20 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Approve patch and minor npm updates
+      - name: Approve patch and minor bun updates
         if: |
-          steps.metadata.outputs.package-ecosystem == 'npm' &&
-          (steps.metadata.outputs.update-type == 'version-update:semver-patch' || 
+          steps.metadata.outputs.package-ecosystem == 'bun' &&
+          (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
            steps.metadata.outputs.update-type == 'version-update:semver-minor')
         run: gh pr review --approve "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Enable auto-merge for npm Dependabot PRs
+      - name: Enable auto-merge for bun Dependabot PRs
         if: |
-          steps.metadata.outputs.package-ecosystem == 'npm' &&
-          (steps.metadata.outputs.update-type == 'version-update:semver-patch' || 
+          steps.metadata.outputs.package-ecosystem == 'bun' &&
+          (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
            steps.metadata.outputs.update-type == 'version-update:semver-minor')
         run: gh pr merge --auto --squash "$PR_URL"
         env:

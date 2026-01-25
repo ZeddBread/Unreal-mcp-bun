@@ -15,7 +15,7 @@ const failureKeywords = ['failed', 'error', 'exception', 'invalid', 'not found',
 const successKeywords = ['success', 'created', 'updated', 'deleted', 'completed', 'done', 'ok'];
 
 // Defaults for spawning the MCP server.
-let serverCommand = process.env.UNREAL_MCP_SERVER_CMD ?? 'node';
+let serverCommand = process.env.UNREAL_MCP_SERVER_CMD ?? 'bun';
 let serverArgs = process.env.UNREAL_MCP_SERVER_ARGS ? process.env.UNREAL_MCP_SERVER_ARGS.split(',') : [path.join(repoRoot, 'dist', 'cli.js')];
 const serverCwd = process.env.UNREAL_MCP_SERVER_CWD ?? repoRoot;
 const serverEnv = Object.assign({}, process.env);
@@ -361,7 +361,7 @@ export async function runToolTests(toolName, testCases) {
 
     // Decide whether to run the built server (dist/cli.js) or to run the
     // TypeScript source directly. Prefer the built dist when it is up-to-date
-    // with the src tree. Fall back to running src with ts-node when dist is
+    // with the src tree. Fall back to running src with bun when dist is
     // missing or older than the src modification time to avoid running stale code.
     const distPath = path.join(repoRoot, 'dist', 'cli.js');
     const srcDir = path.join(repoRoot, 'src');
@@ -390,8 +390,8 @@ export async function runToolTests(toolName, testCases) {
     }
 
     // Choose how to launch the server. Prefer using the built `dist/` executable so
-    // Node resolves ESM imports cleanly. If `dist/` is missing, attempt an automatic
-    // `npm run build` so users that run live tests don't hit ts-node resolution errors.
+    // Bun resolves ESM imports cleanly. If `dist/` is missing, attempt an automatic
+    // `bun run build` so users that run live tests don't hit resolution errors.
     let useDist = false;
     let distExists = false;
     try {
@@ -416,25 +416,22 @@ export async function runToolTests(toolName, testCases) {
             console.log('Detected newer source files than dist; attempting automatic build to refresh dist/ (set UNREAL_MCP_NO_AUTO_BUILD=1 to disable)');
           }
           if (autoBuildEnabled || !autoBuildDisabled) {
-            const { spawn } = await import('node:child_process');
             try {
-              await new Promise((resolve, reject) => {
-                const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-                const ps = process.platform === 'win32'
-                  ? spawn(`${npmCmd} run build`, { cwd: repoRoot, stdio: 'inherit', shell: true })
-                  : spawn(npmCmd, ['run', 'build'], { cwd: repoRoot, stdio: 'inherit' });
-                ps.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`Build failed with code ${code}`))));
-                ps.on('error', (err) => reject(err));
-              });
-              console.log('Build succeeded — using dist/ for live tests');
-              useDist = true;
+              const proc = Bun.spawn(['bun', 'run', 'build'], { cwd: repoRoot, stdio: 'inherit' });
+              const exitCode = await proc.exited;
+              if (exitCode === 0) {
+                console.log('Build succeeded — using dist/ for live tests');
+                useDist = true;
+              } else {
+                throw new Error(`Build failed with code ${exitCode}`);
+              }
             } catch (buildErr) {
               console.warn('Automatic build failed or could not stat files — falling back to TypeScript source for live tests:', String(buildErr));
               useDist = false;
             }
           } else {
             console.log('Detected newer source files than dist but automatic build is disabled.');
-            console.log('Set UNREAL_MCP_AUTO_BUILD=1 to enable automatic builds, or run `npm run build` manually.');
+            console.log('Set UNREAL_MCP_AUTO_BUILD=1 to enable automatic builds, or run `bun run build` manually.');
             useDist = false;
           }
         } else {
@@ -447,25 +444,25 @@ export async function runToolTests(toolName, testCases) {
         console.log('Preferring TypeScript source for tests to pick up local changes (set UNREAL_MCP_FORCE_DIST=1 to force dist)');
       }
     } else {
-      console.log('dist not found — attempting to run `npm run build` to produce dist/ for live tests');
+      console.log('dist not found — attempting to run `bun run build` to produce dist/ for live tests');
       try {
-        const { spawn } = await import('node:child_process');
-        await new Promise((resolve, reject) => {
-          const ps = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build'], { cwd: repoRoot, stdio: 'inherit' });
-          ps.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`Build failed with code ${code}`))));
-          ps.on('error', (err) => reject(err));
-        });
-        useDist = true;
-        console.log('Build succeeded — using dist/ for live tests');
+        const proc = Bun.spawn(['bun', 'run', 'build'], { cwd: repoRoot, stdio: 'inherit' });
+        const exitCode = await proc.exited;
+        if (exitCode === 0) {
+          useDist = true;
+          console.log('Build succeeded — using dist/ for live tests');
+        } else {
+          throw new Error(`Build failed with code ${exitCode}`);
+        }
       } catch (buildErr) {
-        console.warn('Automatic build failed — falling back to running TypeScript source with ts-node-esm:', String(buildErr));
+        console.warn('Automatic build failed — falling back to running TypeScript source with bun:', String(buildErr));
         useDist = false;
       }
     }
 
     if (!useDist) {
-      serverCommand = process.env.UNREAL_MCP_SERVER_CMD ?? 'npx';
-      serverArgs = ['ts-node-esm', path.join(repoRoot, 'src', 'cli.ts')];
+      serverCommand = process.env.UNREAL_MCP_SERVER_CMD ?? 'bun';
+      serverArgs = ['run', path.join(repoRoot, 'src', 'cli.ts')];
     } else {
       serverCommand = process.env.UNREAL_MCP_SERVER_CMD ?? serverCommand;
       serverArgs = process.env.UNREAL_MCP_SERVER_ARGS?.split(',') ?? serverArgs;
@@ -778,23 +775,22 @@ export class TestRunner {
               console.log('Detected newer source files than dist; attempting automatic build to refresh dist/ (set UNREAL_MCP_NO_AUTO_BUILD=1 to disable)');
             }
             if (autoBuildEnabled || !autoBuildDisabled) {
-              const { spawn } = await import('node:child_process');
               try {
-                await new Promise((resolve, reject) => {
-                  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-                  const ps = spawn(npmCmd, ['run', 'build'], { cwd: repoRoot, stdio: 'inherit', shell: process.platform === 'win32' });
-                  ps.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`Build failed with code ${code}`))));
-                  ps.on('error', (err) => reject(err));
-                });
-                console.log('Build succeeded — using dist/ for live tests');
-                useDist = true;
+                const proc = Bun.spawn(['bun', 'run', 'build'], { cwd: repoRoot, stdio: 'inherit' });
+                const exitCode = await proc.exited;
+                if (exitCode === 0) {
+                  console.log('Build succeeded — using dist/ for live tests');
+                  useDist = true;
+                } else {
+                  throw new Error(`Build failed with code ${exitCode}`);
+                }
               } catch (buildErr) {
                 console.warn('Automatic build failed or could not stat files — falling back to TypeScript source for live tests:', String(buildErr));
                 useDist = false;
               }
             } else {
               console.log('Detected newer source files than dist but automatic build is disabled.');
-              console.log('Set UNREAL_MCP_AUTO_BUILD=1 to enable automatic builds, or run `npm run build` manually.');
+              console.log('Set UNREAL_MCP_AUTO_BUILD=1 to enable automatic builds, or run `bun run build` manually.');
               useDist = false;
             }
           } else {
@@ -807,25 +803,25 @@ export class TestRunner {
           console.log('Preferring TypeScript source for tests to pick up local changes (set UNREAL_MCP_FORCE_DIST=1 to force dist)');
         }
       } else {
-        console.log('dist not found — attempting to run `npm run build` to produce dist/ for live tests');
+        console.log('dist not found — attempting to run `bun run build` to produce dist/ for live tests');
         try {
-          const { spawn } = await import('node:child_process');
-          await new Promise((resolve, reject) => {
-            const ps = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build'], { cwd: repoRoot, stdio: 'inherit' });
-            ps.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`Build failed with code ${code}`))));
-            ps.on('error', (err) => reject(err));
-          });
-          useDist = true;
-          console.log('Build succeeded — using dist/ for live tests');
+          const proc = Bun.spawn(['bun', 'run', 'build'], { cwd: repoRoot, stdio: 'inherit' });
+          const exitCode = await proc.exited;
+          if (exitCode === 0) {
+            useDist = true;
+            console.log('Build succeeded — using dist/ for live tests');
+          } else {
+            throw new Error(`Build failed with code ${exitCode}`);
+          }
         } catch (buildErr) {
-          console.warn('Automatic build failed — falling back to running TypeScript source with ts-node-esm:', String(buildErr));
+          console.warn('Automatic build failed — falling back to running TypeScript source with bun:', String(buildErr));
           useDist = false;
         }
       }
 
       if (!useDist) {
-        serverCommand = process.env.UNREAL_MCP_SERVER_CMD ?? 'npx';
-        serverArgs = ['ts-node-esm', path.join(repoRoot, 'src', 'cli.ts')];
+        serverCommand = process.env.UNREAL_MCP_SERVER_CMD ?? 'bun';
+        serverArgs = ['run', path.join(repoRoot, 'src', 'cli.ts')];
       } else {
         serverCommand = process.env.UNREAL_MCP_SERVER_CMD ?? serverCommand;
         serverArgs = process.env.UNREAL_MCP_SERVER_ARGS?.split(',') ?? serverArgs;

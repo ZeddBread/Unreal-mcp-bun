@@ -18,31 +18,35 @@ Please be respectful and constructive in all interactions. We're building someth
 
 ### Prerequisites
 
-- **Node.js** 18+ 
+- **Node.js** 18+
 - **Unreal Engine** 5.0-5.7 (for live testing)
 - **Git**
 
 ### Setup
 
 1. Fork and clone the repository:
+
    ```bash
    git clone https://github.com/ChiR24/Unreal_mcp.git
    cd unreal-engine-mcp-server
    ```
 
 2. Install dependencies:
+
    ```bash
-   npm install
+   bun install
    ```
 
 3. Build the project:
+
    ```bash
-   npm run build
+   bun run build
    ```
 
 4. Run smoke tests (no Unreal needed):
+
    ```bash
-   npm run test:smoke
+   bun run test:smoke
    ```
 
 ## Development Workflow
@@ -50,6 +54,7 @@ Please be respectful and constructive in all interactions. We're building someth
 ### Branch Naming
 
 Use descriptive branch names:
+
 - `feat/add-new-tool` - New features
 - `fix/connection-timeout` - Bug fixes
 - `docs/update-readme` - Documentation
@@ -59,26 +64,26 @@ Use descriptive branch names:
 
 ```bash
 # Smoke test (CI-compatible, no Unreal needed)
-npm run test:smoke
+bun run test:smoke
 
 # Live tests (requires Unreal Editor running with plugin)
-npm run test:all
+bun run test:all
 ```
 
 ### Building
 
 ```bash
-npm run build        # Full build (TypeScript + WASM)
-npm run build:core   # TypeScript only
-npm run build:wasm   # WASM only (requires wasm-pack)
+bun run build        # Full build (TypeScript + WASM)
+bun run build:core   # TypeScript only
+bun run build:wasm   # WASM only (requires wasm-pack)
 ```
 
 ## Pull Request Process
 
 ### Before Submitting
 
-1. ✅ Run `npm run lint` and fix any issues
-2. ✅ Run `npm run test:smoke` to verify basic functionality
+1. ✅ Run `bun run lint` and fix any issues
+2. ✅ Run `bun run test:smoke` to verify basic functionality
 3. ✅ Update documentation if adding new features
 4. ✅ Update `CHANGELOG.md` under `[Unreleased]`
 
@@ -92,7 +97,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/). PR titles m
 Examples:
 feat: add new animation blending tool
 fix: resolve WebSocket connection timeout
-docs: update installation instructions  
+docs: update installation instructions
 refactor: simplify blueprint graph handler
 ```
 
