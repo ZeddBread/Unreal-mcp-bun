@@ -1,3 +1,4 @@
+#include "Dom/JsonObject.h"
 // McpAutomationBridge_NetworkingHandlers.cpp
 // Phase 20: Networking & Multiplayer System Handlers
 //
@@ -11,6 +12,7 @@
 // - Utility (info queries)
 
 #include "McpAutomationBridgeSubsystem.h"
+#include "McpAutomationBridgeHelpers.h"
 #include "McpBridgeWebSocket.h"
 #include "Misc/EngineVersionComparison.h"
 
@@ -49,7 +51,7 @@ namespace NetworkingHelpers
     {
         if (Payload.IsValid() && Payload->HasField(FieldName))
         {
-            return Payload->GetStringField(FieldName);
+            return GetJsonStringField(Payload, FieldName);
         }
         return Default;
     }
@@ -59,7 +61,7 @@ namespace NetworkingHelpers
     {
         if (Payload.IsValid() && Payload->HasField(FieldName))
         {
-            return Payload->GetNumberField(FieldName);
+            return GetJsonNumberField(Payload, FieldName);
         }
         return Default;
     }
@@ -69,7 +71,7 @@ namespace NetworkingHelpers
     {
         if (Payload.IsValid() && Payload->HasField(FieldName))
         {
-            return Payload->GetBoolField(FieldName);
+            return GetJsonBoolField(Payload, FieldName);
         }
         return Default;
     }
