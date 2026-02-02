@@ -8,14 +8,14 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install ALL dependencies (including dev) for building - skip prepare script
-RUN npm ci --ignore-scripts
+RUN bun ci --ignore-scripts
 
 # Copy TypeScript config and source files
 COPY tsconfig.json ./
 COPY src ./src
 
 # Build the TypeScript project
-RUN npm run build
+RUN bun run build
 
 # Production stage
 FROM cgr.dev/chainguard/node:latest
@@ -27,7 +27,7 @@ WORKDIR /app
 
 # Copy only package manifests and install production deps in a clean layer
 COPY --chown=node:node package*.json ./
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+RUN bun ci --omit=dev --ignore-scripts && bun cache clean --force
 
 # Copy built application from builder stage
 COPY --chown=node:node --from=builder /app/dist ./dist

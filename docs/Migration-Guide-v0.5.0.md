@@ -40,7 +40,7 @@ All changes are **backward compatible**. Existing MCP tools continue to work exa
 
 ## New Dependencies
 
-The following npm dependencies have been added:
+The following bun dependencies have been added:
 
 ```json
 {
@@ -51,7 +51,7 @@ The following npm dependencies have been added:
 }
 ```
 
-**Installation**: These are automatically installed when you run `npm install`.
+**Installation**: These are automatically installed when you run `bun install`.
 
 ## Configuration
 
@@ -115,7 +115,7 @@ MCP_AUTOMATION_PORT=8091
 ### Step 1: Update Dependencies
 
 ```bash
-npm install
+bun install
 ```
 
 This installs the new GraphQL dependencies.
@@ -123,7 +123,7 @@ This installs the new GraphQL dependencies.
 ### Step 2: Build the Project
 
 ```bash
-npm run build
+bun run build
 ```
 
 ### Step 3: (Optional) Build WebAssembly Module
@@ -135,7 +135,7 @@ To enable WebAssembly features:
 curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
 # Build the WebAssembly module
-npm run build:wasm
+bun run build:wasm
 ```
 
 This creates the WebAssembly binary in `src/wasm/pkg/`.
@@ -191,18 +191,18 @@ RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN bun install
 
 # Build TypeScript
-RUN npm run build
+RUN bun run build
 
 # Build WebAssembly (optional)
-RUN npm run build:wasm
+RUN bun run build:wasm
 
 EXPOSE 8090
 EXPOSE 4000
 
-CMD ["npm", "start"]
+CMD ["bun", "start"]
 ```
 
 ## Using the New Features
@@ -222,15 +222,17 @@ The GraphQL server runs on a separate port from the MCP server:
 You can use any GraphQL client:
 
 **GraphiQL (In-browser IDE)**
+
 ```bash
 # Start the server
-npm start
+bun start
 
 # Open in browser:
 # http://127.0.0.1:4000/graphql
 ```
 
 **Apollo Studio**
+
 ```typescript
 import { ApolloClient, InMemoryCache, gql } from '@apollo/client/core';
 
@@ -257,6 +259,7 @@ const result = await client.query({ query: GET_ASSETS });
 ```
 
 **Postman/REST Client**
+
 ```bash
 curl -X POST http://127.0.0.1:4000/graphql \
   -H "Content-Type: application/json" \
@@ -266,6 +269,7 @@ curl -X POST http://127.0.0.1:4000/graphql \
 #### 3. Example Queries
 
 **List All Assets**
+
 ```graphql
 {
   assets {
@@ -283,6 +287,7 @@ curl -X POST http://127.0.0.1:4000/graphql \
 ```
 
 **Get Actor with Properties**
+
 ```graphql
 {
   actor(name: "Cube_001") {
@@ -299,6 +304,7 @@ curl -X POST http://127.0.0.1:4000/graphql \
 ```
 
 **Nested Query (Assets + Dependencies)**
+
 ```graphql
 {
   asset(path: "/Game/Materials/M_Master") {
@@ -317,6 +323,7 @@ curl -X POST http://127.0.0.1:4000/graphql \
 ```
 
 **Search Across Types**
+
 ```graphql
 {
   search(query: "Player", type: ALL) {
@@ -521,26 +528,28 @@ const query = `
 
 ```bash
 # Test GraphQL server
-npm run test:graphql
+bun run test:graphql
 
 # Test WebAssembly integration
-npm run test:wasm
+bun run test:wasm
 
 # Test WASM with full build
-npm run test:wasm:all
+bun run test:wasm:all
 
 # Run all existing tests
-npm test
+bun test
 ```
 
 ### Manual Testing
 
 1. **Start the server**:
+
    ```bash
-   npm start
+   bun start
    ```
 
 2. **Test GraphQL**:
+
    ```bash
    # In another terminal
    curl -X POST http://127.0.0.1:4000/graphql \
@@ -549,6 +558,7 @@ npm test
    ```
 
 3. **Check WASM Status**:
+
    ```bash
    # Check logs for WASM initialization
    # Look for: "✅ WebAssembly module initialized successfully"
@@ -561,9 +571,10 @@ npm test
 **Problem**: Port 4000 already in use
 
 **Solution**:
+
 ```bash
 # Use a different port
-GRAPHQL_PORT=4001 npm start
+GRAPHQL_PORT=4001 bun start
 
 # Or kill the process using port 4000
 lsof -ti:4000 | xargs kill
@@ -574,9 +585,10 @@ lsof -ti:4000 | xargs kill
 **Problem**: `Failed to initialize WebAssembly module`
 
 **Solution**:
+
 ```bash
 # Build the WASM module
-npm run build:wasm
+bun run build:wasm
 
 # Check if file exists
 ls -la src/wasm/pkg/unreal_mcp_wasm.js
@@ -590,8 +602,9 @@ echo $WASM_ENABLED  # Should be "true"
 **Problem**: Still using TypeScript fallbacks
 
 **Solution**:
-1. Build WASM: `npm run build:wasm`
-2. Enable WASM: `WASM_ENABLED=true npm start`
+
+1. Build WASM: `bun run build:wasm`
+2. Enable WASM: `WASM_ENABLED=true bun start`
 3. Check logs for: "WebAssembly module initialized successfully"
 4. Check metrics: `wasmIntegration.getMetrics()`
 
@@ -600,6 +613,7 @@ echo $WASM_ENABLED  # Should be "true"
 **Problem**: Complex GraphQL queries taking too long
 
 **Solution**:
+
 1. Use pagination: Add `pagination: { limit: 50 }`
 2. Simplify queries: Request only needed fields
 3. Use filtering: Add `filter` to reduce result set
@@ -634,6 +648,7 @@ echo $WASM_ENABLED  # Should be "true"
 | Strong typing | Introspection & IDE support | Better DX |
 
 **When to stick with MCP tools**:
+
 - Simple, single-resource operations
 - Existing code that works well
 - When GraphQL overhead isn't worth it
@@ -650,15 +665,18 @@ echo $WASM_ENABLED  # Should be "true"
 ## Resources
 
 ### Documentation
+
 - [GraphQL API Documentation](GraphQL-API.md)
 - [WebAssembly Integration Guide](WebAssembly-Integration.md)
 
 ### Tools
+
 - [GraphiQL](https://github.com/graphql/graphiql) - In-browser GraphQL IDE
 - [Apollo Studio](https://studio.apollographql.com) - GraphQL platform
 - [Postman](https://www.postman.com/) - API testing
 
 ### Learning
+
 - [GraphQL.org](https://graphql.org/) - Official GraphQL documentation
 - [WebAssembly.org](https://webassembly.org/) - WebAssembly specification
 

@@ -80,7 +80,7 @@ async function ensureNodeFileFetchForWasm(): Promise<void> {
   try {
     const fs = await import('node:fs/promises');
     const url = await import('node:url');
-    
+
     const readFile = fs.readFile;
     const fileURLToPath = url.fileURLToPath;
 
@@ -235,7 +235,7 @@ export class WASMIntegration {
         // built, log a single concise warning and then rely on the
         // TypeScript fallbacks for the rest of the process without
         // repeatedly attempting to import the missing file.
-        this.log.warn('WebAssembly module not found. To enable WASM, run "npm run build:wasm". To silence this warning, set WASM_ENABLED=false.');
+        this.log.warn('WebAssembly module not found. To enable WASM, run "bun run build:wasm". To silence this warning, set WASM_ENABLED=false.');
         this.moduleUnavailable = true;
       }
 

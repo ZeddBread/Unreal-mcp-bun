@@ -8,7 +8,7 @@
  *
  * Usage:
  *   node tests/integration.mjs
- *   npm test
+ *   bun test
  */
 
 import { runToolTests } from './test-runner.mjs';
