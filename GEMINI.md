@@ -81,7 +81,7 @@ The project includes a suite of integration tests located in the `tests/` direct
 * **Run All Tests:**
 
     ```bash
-    bun test
+    bun run test
     ```
 
 * **Run Specific Test:**
@@ -106,7 +106,6 @@ The project includes a suite of integration tests located in the `tests/` direct
   * C++/C#: Scripts provided (`bun run lint:cpp`, `bun run lint:csharp`) rely on external tools like `cpplint` and `dotnet-format`.
 
 ## Directory Structure
-
 * `src/`: Source code for the Node.js MCP server.
   * `tools/`: Definitions for MCP tools (Actors, Assets, etc.).
   * `resources/`: Definitions for MCP resources.

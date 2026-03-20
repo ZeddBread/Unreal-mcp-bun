@@ -6,6 +6,7 @@
 
 import { ITools } from '../../types/tool-interfaces.js';
 import type { HandlerArgs } from '../../types/handler-types.js';
+import type { AutomationResponse } from '../../types/automation-responses.js';
 import { executeAutomationRequest } from './common-handlers.js';
 import {
   normalizeArgs,
@@ -13,28 +14,21 @@ import {
   extractOptionalString,
   extractOptionalNumber,
   extractOptionalBoolean,
+  extractOptionalObject,
 } from './argument-helper.js';
 
-/** Helper to extract optional object from params */
-function extractOptionalObject(params: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
-  const val = params[key];
-  if (val === undefined || val === null) return undefined;
-  if (typeof val === 'object' && !Array.isArray(val)) return val as Record<string, unknown>;
-  return undefined;
+
+/** Helper to parse a full material path into name and directory */
+function parseMaterialPath(fullPath: string | undefined): { name: string; path: string } | null {
+  if (!fullPath) return null;
+  const lastSlash = fullPath.lastIndexOf('/');
+  if (lastSlash < 0) return { name: fullPath, path: '/Game' };
+  const name = fullPath.substring(lastSlash + 1);
+  const path = fullPath.substring(0, lastSlash);
+  return { name, path };
 }
 import { ResponseFactory } from '../../utils/response-factory.js';
-
-/** Material authoring response */
-interface MaterialAuthoringResponse {
-  success?: boolean;
-  message?: string;
-  error?: string;
-  errorCode?: string;
-  result?: Record<string, unknown>;
-  assetPath?: string;
-  nodeId?: string;
-  [key: string]: unknown;
-}
+import { TOOL_ACTIONS } from '../../utils/action-constants.js';
 
 /**
  * Handle material authoring actions
@@ -48,25 +42,41 @@ export async function handleMaterialAuthoringTools(
     switch (action) {
       // ===== 8.1 Material Creation =====
       case 'create_material': {
-        const params = normalizeArgs(args, [
-          { key: 'name', required: true },
-          { key: 'path', aliases: ['directory'], default: '/Game/Materials' },
-          { key: 'materialDomain', aliases: ['domain'], default: 'Surface' },
-          { key: 'blendMode', default: 'Opaque' },
-          { key: 'shadingModel', default: 'DefaultLit' },
-          { key: 'twoSided', default: false },
-          { key: 'save', default: true },
-        ]);
+        // Check if materialPath is provided (full path like /Game/MCPTest/M_Test)
+        const rawArgs = args as Record<string, unknown>;
+        const materialPath = extractOptionalString(rawArgs, 'materialPath') ?? 
+                            extractOptionalString(rawArgs, 'material_path') ??
+                            extractOptionalString(rawArgs, 'assetPath');
+        
+        let name: string;
+        let path: string;
+        
+        if (materialPath) {
+          // Parse full path into name and directory
+          const parsed = parseMaterialPath(materialPath);
+          if (!parsed) {
+            return ResponseFactory.error('Invalid materialPath format', 'INVALID_ARGUMENT');
+          }
+          name = parsed.name;
+          path = parsed.path;
+        } else {
+          // Use normalizeArgs for individual name/path
+          const params = normalizeArgs(args, [
+            { key: 'name', required: true },
+            { key: 'path', aliases: ['directory'], default: '/Game/Materials' },
+          ]);
+          name = extractString(params, 'name');
+          path = extractOptionalString(params, 'path') ?? '/Game/Materials';
+        }
+        
+        const materialDomain = extractOptionalString(rawArgs, 'materialDomain') ?? 
+                              extractOptionalString(rawArgs, 'domain') ?? 'Surface';
+        const blendMode = extractOptionalString(rawArgs, 'blendMode') ?? 'Opaque';
+        const shadingModel = extractOptionalString(rawArgs, 'shadingModel') ?? 'DefaultLit';
+        const twoSided = extractOptionalBoolean(rawArgs, 'twoSided') ?? false;
+        const save = extractOptionalBoolean(rawArgs, 'save') ?? true;
 
-        const name = extractString(params, 'name');
-        const path = extractOptionalString(params, 'path') ?? '/Game/Materials';
-        const materialDomain = extractOptionalString(params, 'materialDomain') ?? 'Surface';
-        const blendMode = extractOptionalString(params, 'blendMode') ?? 'Opaque';
-        const shadingModel = extractOptionalString(params, 'shadingModel') ?? 'DefaultLit';
-        const twoSided = extractOptionalBoolean(params, 'twoSided') ?? false;
-        const save = extractOptionalBoolean(params, 'save') ?? true;
-
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'create_material',
           name,
           path,
@@ -75,7 +85,7 @@ export async function handleMaterialAuthoringTools(
           shadingModel,
           twoSided,
           save,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to create material', res.errorCode);
@@ -94,12 +104,12 @@ export async function handleMaterialAuthoringTools(
         const blendMode = extractString(params, 'blendMode');
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'set_blend_mode',
           assetPath,
           blendMode,
           save,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to set blend mode', res.errorCode);
@@ -118,12 +128,12 @@ export async function handleMaterialAuthoringTools(
         const shadingModel = extractString(params, 'shadingModel');
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'set_shading_model',
           assetPath,
           shadingModel,
           save,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to set shading model', res.errorCode);
@@ -142,12 +152,12 @@ export async function handleMaterialAuthoringTools(
         const domain = extractString(params, 'domain');
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'set_material_domain',
           assetPath,
           materialDomain: domain,
           save,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to set material domain', res.errorCode);
@@ -173,7 +183,7 @@ export async function handleMaterialAuthoringTools(
         const y = extractOptionalNumber(params, 'y') ?? 0;
         const samplerType = extractOptionalString(params, 'samplerType') ?? 'Color';
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'add_texture_sample',
           assetPath,
           texturePath,
@@ -181,7 +191,7 @@ export async function handleMaterialAuthoringTools(
           x,
           y,
           samplerType,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to add texture sample', res.errorCode);
@@ -206,7 +216,7 @@ export async function handleMaterialAuthoringTools(
         const x = extractOptionalNumber(params, 'x') ?? 0;
         const y = extractOptionalNumber(params, 'y') ?? 0;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'add_texture_coordinate',
           assetPath,
           coordinateIndex,
@@ -214,7 +224,7 @@ export async function handleMaterialAuthoringTools(
           vTiling,
           x,
           y,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to add texture coordinate', res.errorCode);
@@ -239,7 +249,7 @@ export async function handleMaterialAuthoringTools(
         const x = extractOptionalNumber(params, 'x') ?? 0;
         const y = extractOptionalNumber(params, 'y') ?? 0;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'add_scalar_parameter',
           assetPath,
           parameterName,
@@ -247,7 +257,7 @@ export async function handleMaterialAuthoringTools(
           group,
           x,
           y,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to add scalar parameter', res.errorCode);
@@ -272,7 +282,7 @@ export async function handleMaterialAuthoringTools(
         const x = extractOptionalNumber(params, 'x') ?? 0;
         const y = extractOptionalNumber(params, 'y') ?? 0;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'add_vector_parameter',
           assetPath,
           parameterName,
@@ -280,7 +290,7 @@ export async function handleMaterialAuthoringTools(
           group,
           x,
           y,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to add vector parameter', res.errorCode);
@@ -305,7 +315,7 @@ export async function handleMaterialAuthoringTools(
         const x = extractOptionalNumber(params, 'x') ?? 0;
         const y = extractOptionalNumber(params, 'y') ?? 0;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'add_static_switch_parameter',
           assetPath,
           parameterName,
@@ -313,7 +323,7 @@ export async function handleMaterialAuthoringTools(
           group,
           x,
           y,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to add static switch', res.errorCode);
@@ -338,7 +348,7 @@ export async function handleMaterialAuthoringTools(
         const constA = extractOptionalNumber(params, 'constA');
         const constB = extractOptionalNumber(params, 'constB');
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'add_math_node',
           assetPath,
           operation,
@@ -346,7 +356,7 @@ export async function handleMaterialAuthoringTools(
           y,
           constA,
           constB,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to add math node', res.errorCode);
@@ -373,13 +383,13 @@ export async function handleMaterialAuthoringTools(
         const x = extractOptionalNumber(params, 'x') ?? 0;
         const y = extractOptionalNumber(params, 'y') ?? 0;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: action,
           assetPath,
           x,
           y,
           ...args, // Pass through any additional params
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? `Failed to add ${action}`, res.errorCode);
@@ -399,12 +409,12 @@ export async function handleMaterialAuthoringTools(
         const x = extractOptionalNumber(params, 'x') ?? 0;
         const y = extractOptionalNumber(params, 'y') ?? 0;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: action,
           assetPath,
           x,
           y,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? `Failed to add ${action}`, res.errorCode);
@@ -429,7 +439,7 @@ export async function handleMaterialAuthoringTools(
         const x = extractOptionalNumber(params, 'x') ?? 0;
         const y = extractOptionalNumber(params, 'y') ?? 0;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'add_custom_expression',
           assetPath,
           code,
@@ -437,7 +447,7 @@ export async function handleMaterialAuthoringTools(
           description,
           x,
           y,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to add custom expression', res.errorCode);
@@ -445,29 +455,35 @@ export async function handleMaterialAuthoringTools(
         return ResponseFactory.success(res, res.message ?? 'Custom HLSL expression added');
       }
 
-      case 'connect_nodes': {
-        const params = normalizeArgs(args, [
-          { key: 'assetPath', aliases: ['materialPath'], required: true },
-          { key: 'sourceNodeId', aliases: ['fromNode'], required: true },
-          { key: 'sourcePin', aliases: ['fromPin'], default: '' },
-          { key: 'targetNodeId', aliases: ['toNode'], required: true },
-          { key: 'targetPin', aliases: ['toPin', 'inputName'], required: true },
-        ]);
-
-        const assetPath = extractString(params, 'assetPath');
-        const sourceNodeId = extractString(params, 'sourceNodeId');
-        const sourcePin = extractOptionalString(params, 'sourcePin') ?? '';
-        const targetNodeId = extractString(params, 'targetNodeId');
-        const targetPin = extractString(params, 'targetPin');
-
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+      case 'connect_nodes':
+      case 'connect_material_pins': {
+        const rawArgs = args as Record<string, unknown>;
+        const assetPath = extractOptionalString(rawArgs, 'assetPath') ?? 
+                         extractOptionalString(rawArgs, 'materialPath') ?? '';
+        
+        // Try both formats: node-based and pin-based
+        const sourceNodeId = extractOptionalString(rawArgs, 'sourceNodeId') ?? 
+                            extractOptionalString(rawArgs, 'fromNode') ?? '';
+        const targetNodeId = extractOptionalString(rawArgs, 'targetNodeId') ?? 
+                            extractOptionalString(rawArgs, 'toNode') ?? '';
+        const sourcePin = extractOptionalString(rawArgs, 'sourcePin') ?? 
+                         extractOptionalString(rawArgs, 'fromPin') ?? '';
+        const targetPin = extractOptionalString(rawArgs, 'targetPin') ?? 
+                         extractOptionalString(rawArgs, 'toPin') ?? 
+                         extractOptionalString(rawArgs, 'inputName') ?? '';
+        
+        // If node IDs not provided, use pin names as identifiers
+        const effectiveSourceId = sourceNodeId || sourcePin;
+        const effectiveTargetId = targetNodeId || targetPin;
+        
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'connect_nodes',
           assetPath,
-          sourceNodeId,
+          sourceNodeId: effectiveSourceId,
           sourcePin,
-          targetNodeId,
+          targetNodeId: effectiveTargetId,
           inputName: targetPin,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to connect nodes', res.errorCode);
@@ -475,23 +491,29 @@ export async function handleMaterialAuthoringTools(
         return ResponseFactory.success(res, res.message ?? 'Nodes connected');
       }
 
-      case 'disconnect_nodes': {
-        const params = normalizeArgs(args, [
-          { key: 'assetPath', aliases: ['materialPath'], required: true },
-          { key: 'nodeId', required: true },
-          { key: 'pinName' },
-        ]);
+      case 'disconnect_nodes':
+      case 'break_material_connections': {
+        const rawArgs = args as Record<string, unknown>;
+        const assetPath = extractOptionalString(rawArgs, 'assetPath') ?? 
+                         extractOptionalString(rawArgs, 'materialPath') ?? '';
+        // Accept both nodeId and pinName as identifiers
+        const nodeId = extractOptionalString(rawArgs, 'nodeId') ?? 
+                      extractOptionalString(rawArgs, 'pinName') ?? '';
+        const pinName = extractOptionalString(rawArgs, 'pinName');
+        
+        if (!assetPath) {
+          return ResponseFactory.error('Missing required argument: assetPath or materialPath', 'MISSING_ASSET_PATH');
+        }
+        if (!nodeId) {
+          return ResponseFactory.error('Missing required argument: nodeId (or pinName)', 'MISSING_NODE_ID');
+        }
 
-        const assetPath = extractString(params, 'assetPath');
-        const nodeId = extractString(params, 'nodeId');
-        const pinName = extractOptionalString(params, 'pinName');
-
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'disconnect_nodes',
           assetPath,
           nodeId,
           pinName,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to disconnect nodes', res.errorCode);
@@ -515,14 +537,14 @@ export async function handleMaterialAuthoringTools(
         const exposeToLibrary = extractOptionalBoolean(params, 'exposeToLibrary') ?? true;
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'create_material_function',
           name,
           path,
           description,
           exposeToLibrary,
           save,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to create material function', res.errorCode);
@@ -546,14 +568,14 @@ export async function handleMaterialAuthoringTools(
         const x = extractOptionalNumber(params, 'x') ?? 0;
         const y = extractOptionalNumber(params, 'y') ?? 0;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: action,
           assetPath,
           inputName,
           inputType,
           x,
           y,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? `Failed to add function ${action === 'add_function_input' ? 'input' : 'output'}`, res.errorCode);
@@ -574,13 +596,13 @@ export async function handleMaterialAuthoringTools(
         const x = extractOptionalNumber(params, 'x') ?? 0;
         const y = extractOptionalNumber(params, 'y') ?? 0;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'use_material_function',
           assetPath,
           functionPath,
           x,
           y,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to use material function', res.errorCode);
@@ -590,25 +612,54 @@ export async function handleMaterialAuthoringTools(
 
       // ===== 8.4 Material Instances =====
       case 'create_material_instance': {
-        const params = normalizeArgs(args, [
-          { key: 'name', required: true },
-          { key: 'path', aliases: ['directory'], default: '/Game/Materials' },
-          { key: 'parentMaterial', aliases: ['parent'], required: true },
-          { key: 'save', default: true },
-        ]);
+        // Support both old format (name+path+parentMaterial) and new format (instancePath+parentMaterialPath)
+        const rawArgs = args as Record<string, unknown>;
+        const instancePath = extractOptionalString(rawArgs, 'instancePath') ?? 
+                            extractOptionalString(rawArgs, 'instance_path') ??
+                            extractOptionalString(rawArgs, 'materialPath');
+        const parentMaterialPath = extractOptionalString(rawArgs, 'parentMaterialPath') ?? 
+                                  extractOptionalString(rawArgs, 'parent_material_path') ??
+                                  extractOptionalString(rawArgs, 'parentMaterial') ??
+                                  extractOptionalString(rawArgs, 'parent');
+        
+        let name: string;
+        let path: string;
+        let parentMaterial: string;
+        
+        if (instancePath) {
+          // Parse full path into name and directory
+          const parsed = parseMaterialPath(instancePath);
+          if (!parsed) {
+            return ResponseFactory.error('Invalid instancePath format', 'INVALID_ARGUMENT');
+          }
+          name = parsed.name;
+          path = parsed.path;
+          parentMaterial = parentMaterialPath ?? '';
+        } else {
+          // Use normalizeArgs for individual name/path
+          const params = normalizeArgs(args, [
+            { key: 'name', required: true },
+            { key: 'path', aliases: ['directory'], default: '/Game/Materials' },
+            { key: 'parentMaterial', aliases: ['parent'], required: true },
+          ]);
+          name = extractString(params, 'name');
+          path = extractOptionalString(params, 'path') ?? '/Game/Materials';
+          parentMaterial = extractString(params, 'parentMaterial');
+        }
+        
+        if (!parentMaterial) {
+          return ResponseFactory.error('parentMaterialPath or parent is required', 'MISSING_PARENT');
+        }
+        
+        const save = extractOptionalBoolean(rawArgs, 'save') ?? true;
 
-        const name = extractString(params, 'name');
-        const path = extractOptionalString(params, 'path') ?? '/Game/Materials';
-        const parentMaterial = extractString(params, 'parentMaterial');
-        const save = extractOptionalBoolean(params, 'save') ?? true;
-
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'create_material_instance',
           name,
           path,
           parentMaterial,
           save,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to create material instance', res.errorCode);
@@ -629,13 +680,13 @@ export async function handleMaterialAuthoringTools(
         const value = extractOptionalNumber(params, 'value') ?? 0;
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'set_scalar_parameter_value',
           assetPath,
           parameterName,
           value,
           save,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to set scalar parameter', res.errorCode);
@@ -656,13 +707,13 @@ export async function handleMaterialAuthoringTools(
         const value = extractOptionalObject(params, 'value') ?? { r: 1, g: 1, b: 1, a: 1 };
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'set_vector_parameter_value',
           assetPath,
           parameterName,
           value,
           save,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to set vector parameter', res.errorCode);
@@ -683,13 +734,13 @@ export async function handleMaterialAuthoringTools(
         const texturePath = extractString(params, 'texturePath');
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'set_texture_parameter_value',
           assetPath,
           parameterName,
           texturePath,
           save,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to set texture parameter', res.errorCode);
@@ -711,13 +762,13 @@ export async function handleMaterialAuthoringTools(
         const path = extractOptionalString(params, 'path') ?? '/Game/Materials';
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: action,
           name,
           path,
           save,
           ...args, // Pass through extra params like layers for landscape
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? `Failed to ${action}`, res.errorCode);
@@ -736,12 +787,12 @@ export async function handleMaterialAuthoringTools(
         const layerName = extractString(params, 'layerName');
         const blendType = extractOptionalString(params, 'blendType') ?? 'LB_WeightBlend';
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'add_landscape_layer',
           assetPath,
           layerName,
           blendType,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to add landscape layer', res.errorCode);
@@ -758,11 +809,11 @@ export async function handleMaterialAuthoringTools(
         const assetPath = extractString(params, 'assetPath');
         const layers = params.layers;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'configure_layer_blend',
           assetPath,
           layers,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to configure layer blend', res.errorCode);
@@ -779,11 +830,11 @@ export async function handleMaterialAuthoringTools(
         const assetPath = extractString(params, 'assetPath');
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'compile_material',
           assetPath,
           save,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to compile material', res.errorCode);
@@ -798,15 +849,192 @@ export async function handleMaterialAuthoringTools(
 
         const assetPath = extractString(params, 'assetPath');
 
-        const res = (await executeAutomationRequest(tools, 'manage_material_authoring', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
           subAction: 'get_material_info',
           assetPath,
-        })) as MaterialAuthoringResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to get material info', res.errorCode);
         }
         return ResponseFactory.success(res, res.message ?? 'Material info retrieved');
+      }
+
+      // ===== 8.6 Aliases and Additional Actions =====
+
+      // Alias: add_material_node -> add_math_node
+      case 'add_material_node': {
+        const rawArgs = args as Record<string, unknown>;
+        const assetPath = extractOptionalString(rawArgs, 'assetPath') ?? 
+                         extractOptionalString(rawArgs, 'materialPath') ?? '';
+        const nodeType = extractOptionalString(rawArgs, 'nodeType') ?? 
+                        extractOptionalString(rawArgs, 'type') ?? '';
+        const x = extractOptionalNumber(rawArgs, 'x') ?? 0;
+        const y = extractOptionalNumber(rawArgs, 'y') ?? 0;
+        
+        if (!assetPath) {
+          return ResponseFactory.error('Missing required argument: assetPath or materialPath', 'MISSING_ASSET_PATH');
+        }
+        if (!nodeType) {
+          return ResponseFactory.error('Missing required argument: nodeType', 'MISSING_NODE_TYPE');
+        }
+
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
+          subAction: 'add_material_node',
+          assetPath,
+          nodeType,
+          x,
+          y,
+        })) as AutomationResponse;
+
+        if (res.success === false) {
+          return ResponseFactory.error(res.error ?? 'Failed to add material node', res.errorCode);
+        }
+        return ResponseFactory.success(res, res.message ?? `Material node '${nodeType}' added`);
+      }
+
+      // Alias connect_material_pins -> connect_nodes is handled via fallthrough at the connect_nodes case above
+
+      // Alias: rebuild_material -> compile_material
+      case 'rebuild_material':
+        return handleMaterialAuthoringTools('compile_material', args, tools);
+
+      // Generic parameter setter
+      case 'set_material_parameter': {
+        const rawArgs = args as Record<string, unknown>;
+        const assetPath = extractOptionalString(rawArgs, 'assetPath') ?? 
+                         extractOptionalString(rawArgs, 'materialPath') ?? 
+                         extractOptionalString(rawArgs, 'instancePath') ?? '';
+        const parameterName = extractOptionalString(rawArgs, 'parameterName') ?? '';
+        const parameterType = extractOptionalString(rawArgs, 'parameterType') ?? 'scalar';
+        const save = extractOptionalBoolean(rawArgs, 'save') ?? true;
+        const value = rawArgs.value;
+        
+        if (!assetPath) {
+          return ResponseFactory.error('Missing required argument: assetPath (or instancePath, materialPath)', 'MISSING_ASSET_PATH');
+        }
+        if (!parameterName) {
+          return ResponseFactory.error('Missing required argument: parameterName', 'MISSING_PARAMETER_NAME');
+        }
+        if (value === undefined) {
+          return ResponseFactory.error('Missing required argument: value', 'MISSING_VALUE');
+        }
+
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
+          subAction: 'set_material_parameter',
+          assetPath,
+          parameterName,
+          value,
+          parameterType,
+          save,
+        })) as AutomationResponse;
+
+        if (res.success === false) {
+          return ResponseFactory.error(res.error ?? 'Failed to set parameter', res.errorCode);
+        }
+        return ResponseFactory.success(res, res.message ?? `Parameter '${parameterName}' set`);
+      }
+
+      // Get node details
+      case 'get_material_node_details': {
+        const rawArgs = args as Record<string, unknown>;
+        const assetPath = extractOptionalString(rawArgs, 'assetPath') ?? 
+                         extractOptionalString(rawArgs, 'materialPath') ?? '';
+        const nodeId = extractOptionalString(rawArgs, 'nodeId') ?? '';
+        
+        if (!assetPath) {
+          return ResponseFactory.error('Missing required argument: assetPath or materialPath', 'MISSING_ASSET_PATH');
+        }
+        if (!nodeId) {
+          return ResponseFactory.error('Missing required argument: nodeId', 'MISSING_NODE_ID');
+        }
+
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
+          subAction: 'get_material_node_details',
+          assetPath,
+          nodeId,
+        })) as AutomationResponse;
+
+        if (res.success === false) {
+          return ResponseFactory.error(res.error ?? 'Failed to get node details', res.errorCode);
+        }
+        return ResponseFactory.success(res, res.message ?? 'Node details retrieved');
+      }
+
+      // Remove material node
+      case 'remove_material_node': {
+        const rawArgs = args as Record<string, unknown>;
+        const assetPath = extractOptionalString(rawArgs, 'assetPath') ?? 
+                         extractOptionalString(rawArgs, 'materialPath') ?? '';
+        const nodeId = extractOptionalString(rawArgs, 'nodeId') ?? '';
+        
+        if (!assetPath) {
+          return ResponseFactory.error('Missing required argument: assetPath or materialPath', 'MISSING_ASSET_PATH');
+        }
+        if (!nodeId) {
+          return ResponseFactory.error('Missing required argument: nodeId', 'MISSING_NODE_ID');
+        }
+
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
+          subAction: 'remove_material_node',
+          assetPath,
+          nodeId,
+        })) as AutomationResponse;
+
+        if (res.success === false) {
+          return ResponseFactory.error(res.error ?? 'Failed to remove node', res.errorCode);
+        }
+        return ResponseFactory.success(res, res.message ?? 'Material node removed');
+      }
+
+      // Set two-sided property
+      case 'set_two_sided': {
+        const params = normalizeArgs(args, [
+          { key: 'assetPath', aliases: ['materialPath'], required: true },
+          { key: 'twoSided', aliases: ['enabled'], default: true },
+          { key: 'save', default: true },
+        ]);
+
+        const assetPath = extractString(params, 'assetPath');
+        const twoSided = extractOptionalBoolean(params, 'twoSided') ?? true;
+        const save = extractOptionalBoolean(params, 'save') ?? true;
+
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
+          subAction: 'set_two_sided',
+          assetPath,
+          twoSided,
+          save,
+        })) as AutomationResponse;
+
+        if (res.success === false) {
+          return ResponseFactory.error(res.error ?? 'Failed to set two-sided', res.errorCode);
+        }
+        return ResponseFactory.success(res, res.message ?? `Two-sided set to ${twoSided}`);
+      }
+
+      // Set cast shadows property
+      case 'set_cast_shadows': {
+        const params = normalizeArgs(args, [
+          { key: 'assetPath', aliases: ['materialPath'], required: true },
+          { key: 'castShadows', aliases: ['enabled'], default: true },
+          { key: 'save', default: true },
+        ]);
+
+        const assetPath = extractString(params, 'assetPath');
+        const castShadows = extractOptionalBoolean(params, 'castShadows') ?? true;
+        const save = extractOptionalBoolean(params, 'save') ?? true;
+
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_MATERIAL_AUTHORING, {
+          subAction: 'set_cast_shadows',
+          assetPath,
+          castShadows,
+          save,
+        })) as AutomationResponse;
+
+        if (res.success === false) {
+          return ResponseFactory.error(res.error ?? 'Failed to set cast shadows', res.errorCode);
+        }
+        return ResponseFactory.success(res, res.message ?? `Cast shadows set to ${castShadows}`);
       }
 
       default:

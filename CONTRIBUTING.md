@@ -71,7 +71,6 @@ bun run test:all
 ```
 
 ### Building
-
 ```bash
 bun run build        # Full build (TypeScript + WASM)
 bun run build:core   # TypeScript only

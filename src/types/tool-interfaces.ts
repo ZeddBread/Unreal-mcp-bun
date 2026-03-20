@@ -1,20 +1,7 @@
 import { AutomationBridge } from '../automation/index.js';
 
-// Import tool class types (using import type to avoid circular dependencies)
-import type { MaterialTools } from '../tools/materials.js';
-import type { NiagaraTools } from '../tools/niagara.js';
-import type { AnimationTools } from '../tools/animation.js';
-import type { PhysicsTools } from '../tools/physics.js';
-import type { LightingTools } from '../tools/lighting.js';
-import type { DebugVisualizationTools } from '../tools/debug.js';
-import type { PerformanceTools } from '../tools/performance.js';
-import type { AudioTools } from '../tools/audio.js';
-import type { UITools } from '../tools/ui.js';
-import type { IntrospectionTools } from '../tools/introspection.js';
-import type { EngineTools } from '../tools/engine.js';
-import type { BehaviorTreeTools } from '../tools/behavior-tree.js';
+// Import tool class types for file I/O operations (using import type to avoid circular dependencies)
 import type { LogTools } from '../tools/logs.js';
-import type { InputTools } from '../tools/input.js';
 
 export interface IBaseTool {
     getAutomationBridge(): AutomationBridge;
@@ -121,7 +108,7 @@ export interface IBlueprintTools {
     createBlueprint(params: { name: string; blueprintType?: string; savePath?: string; parentClass?: string; properties?: Record<string, unknown>; timeoutMs?: number; waitForCompletion?: boolean; waitForCompletionTimeoutMs?: number }): Promise<StandardActionResponse>;
     modifyConstructionScript(params: { blueprintPath: string; operations: Array<Record<string, unknown>>; compile?: boolean; save?: boolean; timeoutMs?: number; waitForCompletion?: boolean; waitForCompletionTimeoutMs?: number }): Promise<StandardActionResponse>;
     addComponent(params: { blueprintName: string; componentType: string; componentName: string; attachTo?: string; transform?: Record<string, unknown>; properties?: Record<string, unknown>; compile?: boolean; save?: boolean; timeoutMs?: number; waitForCompletion?: boolean; waitForCompletionTimeoutMs?: number }): Promise<StandardActionResponse>;
-    waitForBlueprint(blueprintRef: string | string[], timeoutMs?: number): Promise<StandardActionResponse>;
+    waitForBlueprint(blueprintRef: string | string[], options?: { timeoutMs?: number; shouldExist?: boolean }): Promise<StandardActionResponse>;
     getBlueprint(params: { blueprintName: string; timeoutMs?: number }): Promise<StandardActionResponse>;
     getBlueprintInfo(params: { blueprintPath: string; timeoutMs?: number }): Promise<StandardActionResponse>;
     probeSubobjectDataHandle(opts?: { componentClass?: string }): Promise<StandardActionResponse>;
@@ -156,7 +143,7 @@ export interface ILevelTools {
     deleteLevels(params: { levelPaths: string[] }): Promise<StandardActionResponse>;
     loadLevel(params: { levelPath: string; streaming?: boolean; position?: [number, number, number] }): Promise<StandardActionResponse>;
     saveLevel(params: { levelName?: string; savePath?: string }): Promise<StandardActionResponse>;
-    createLevel(params: { levelName: string; template?: 'Empty' | 'Default' | 'VR' | 'TimeOfDay'; savePath?: string }): Promise<StandardActionResponse>;
+    createLevel(params: { levelName: string; template?: 'Empty' | 'Default' | 'VR' | 'TimeOfDay'; savePath?: string; useWorldPartition?: boolean }): Promise<StandardActionResponse>;
     addSubLevel(params: { parentLevel?: string; subLevelPath: string; streamingMethod?: 'Blueprint' | 'AlwaysLoaded' }): Promise<StandardActionResponse>;
     streamLevel(params: { levelPath?: string; levelName?: string; shouldBeLoaded: boolean; shouldBeVisible?: boolean; position?: [number, number, number] }): Promise<StandardActionResponse>;
     setupWorldComposition(params: { enableComposition: boolean; tileSize?: number; distanceStreaming?: boolean; streamingDistance?: number }): Promise<StandardActionResponse>;
@@ -210,7 +197,7 @@ export interface ILandscapeTools {
     createProceduralTerrain(params: { name: string; location?: [number, number, number]; subdivisions?: number; heightFunction?: string; material?: string; settings?: Record<string, unknown> }): Promise<StandardActionResponse>;
     createLandscapeGrassType(params: { name: string; meshPath: string; density?: number; minScale?: number; maxScale?: number; path?: string; staticMesh?: string }): Promise<StandardActionResponse>;
     setLandscapeMaterial(params: { landscapeName: string; materialPath: string }): Promise<StandardActionResponse>;
-    modifyHeightmap(params: { landscapeName: string; heightData: number[]; minX: number; minY: number; maxX: number; maxY: number; updateNormals?: boolean }): Promise<StandardActionResponse>;
+    modifyHeightmap(params: { landscapeName: string; heightData: number[]; minX: number; minY: number; maxX: number; maxY: number; updateNormals?: boolean; timeoutMs?: number }): Promise<StandardActionResponse>;
 }
 
 export interface IFoliageTools {
@@ -244,28 +231,26 @@ export interface ITools {
     foliageTools: IFoliageTools;
     environmentTools: IEnvironmentTools;
 
-    // Tool class types (imported to replace 'any')
-    materialTools: MaterialTools;
-    niagaraTools: NiagaraTools;
-    animationTools: AnimationTools;
-    physicsTools: PhysicsTools;
-    lightingTools: LightingTools;
-    debugTools: DebugVisualizationTools;
-    performanceTools: PerformanceTools;
-    audioTools: AudioTools;
-    uiTools: UITools;
-    introspectionTools: IntrospectionTools;
-    visualTools?: DebugVisualizationTools;
-    engineTools: EngineTools;
+    // File I/O tool classes (kept for local file operations)
+    logTools: LogTools;
+
     systemTools: {
         executeConsoleCommand: (command: string) => Promise<unknown>;
         getProjectSettings: (section?: string) => Promise<Record<string, unknown>>;
     };
-    behaviorTreeTools: BehaviorTreeTools;
-    logTools: LogTools;
-    inputTools?: InputTools;
 
+    // Elicitation support - using function types
+    elicit?: unknown;
+    supportsElicitation?: () => boolean;
+    elicitationTimeoutMs?: number;
+    // Resources
+    actorResources?: unknown;
+    levelResources?: unknown;
+
+    // Bridge references
     automationBridge?: AutomationBridge;
+    bridge?: unknown; // UnrealBridge
+
     // Index signature allows additional tool properties
     // Using 'unknown' instead of 'any' for type safety - callers must narrow types when accessing
     [key: string]: unknown;

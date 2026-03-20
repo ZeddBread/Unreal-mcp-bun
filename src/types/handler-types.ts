@@ -44,14 +44,9 @@ export interface HandlerArgs {
 
 /**
  * Standard response from automation bridge requests.
+ * Re-exported from automation-responses.ts for convenience.
  */
-export interface AutomationResponse {
-    success: boolean;
-    message?: string;
-    error?: string;
-    result?: unknown;
-    [key: string]: unknown;
-}
+export { AutomationResponse } from './automation-responses.js';
 
 /**
  * Component information returned from getComponents.
@@ -222,6 +217,7 @@ export interface BlueprintArgs extends HandlerArgs {
     timeoutMs?: number;
     waitForCompletion?: boolean;
     waitForCompletionTimeoutMs?: number;
+    shouldExist?: boolean;
     // Parent class for blueprint creation
     parentClass?: string;
     // SCS operations array
@@ -270,6 +266,8 @@ export interface LevelArgs extends HandlerArgs {
     exportPath?: string;
     packagePath?: string;
     sourcePath?: string;
+    newName?: string;
+    template?: string;
     lightType?: 'Directional' | 'Point' | 'Spot' | 'Rect';
     name?: string;
     location?: Vector3;
@@ -290,6 +288,7 @@ export interface LevelArgs extends HandlerArgs {
     extent?: number[];
     metadata?: Record<string, unknown>;
     timeoutMs?: number;
+    useWorldPartition?: boolean;
 }
 
 // ============================================================================
@@ -628,6 +627,10 @@ export interface InputArgs extends HandlerArgs {
     actionPath?: string;
     contextPath?: string;
     key?: string;
+    triggerType?: string;
+    modifierType?: string;
+    assetPath?: string;
+    priority?: number;
 }
 
 // ============================================================================

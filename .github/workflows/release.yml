@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -63,6 +63,7 @@ jobs:
         run: |
           mkdir -p release-artifacts
           
+          # Pre-built archive (ready to run)
           tar -czvf release-artifacts/unreal-engine-mcp-server-${{ steps.version.outputs.version }}.tar.gz \
             dist/ \
             package.json \
@@ -76,6 +77,35 @@ jobs:
             README.md \
             CHANGELOG.md \
             LICENSE
+          
+          # Source archive (for rebuilding)
+          OPTIONAL_PATHS=""
+          [ -d "wasm" ] && OPTIONAL_PATHS="$OPTIONAL_PATHS wasm/"
+          [ -f "server.json" ] && OPTIONAL_PATHS="$OPTIONAL_PATHS server.json"
+          
+          tar -czvf release-artifacts/unreal-engine-mcp-server-${{ steps.version.outputs.version }}-source.tar.gz \
+            dist/ \
+            src/ \
+            package.json \
+            package-lock.json \
+            tsconfig.json \
+            eslint.config.mjs \
+            README.md \
+            CHANGELOG.md \
+            LICENSE \
+            $OPTIONAL_PATHS
+          
+          zip -r release-artifacts/unreal-engine-mcp-server-${{ steps.version.outputs.version }}-source.zip \
+            dist/ \
+            src/ \
+            package.json \
+            package-lock.json \
+            tsconfig.json \
+            eslint.config.mjs \
+            README.md \
+            CHANGELOG.md \
+            LICENSE \
+            $OPTIONAL_PATHS
 
       - name: Create Plugin archive
         run: |
@@ -92,7 +122,7 @@ jobs:
           fi
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        uses: softprops/action-gh-release@1853d73993c8ca1b2c9c1a7fede39682d0ab5c2a # v2.5.3
         with:
           name: Release ${{ steps.version.outputs.tag }}
           body_path: release_notes.md

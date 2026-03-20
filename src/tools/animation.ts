@@ -1,8 +1,7 @@
 import { UnrealBridge } from '../unreal-bridge.js';
 import { AutomationBridge } from '../automation/index.js';
 import { cleanObject } from '../utils/safe-json.js';
-import { validateAssetParams } from '../utils/validation.js';
-import { wasmIntegration as _wasmIntegration } from '../wasm/index.js';
+import { validateAssetParams, sanitizeCommandArgument } from '../utils/validation.js';
 
 type CreateAnimationBlueprintSuccess = {
   success: true;
@@ -174,32 +173,59 @@ export class AnimationTools {
         return { success: false, error: 'blueprintPath and machineName are required' };
       }
 
+      // SECURITY: Sanitize all user inputs to prevent command injection
+      const safeBlueprintPath = sanitizeCommandArgument(params.blueprintPath);
+      const safeMachineName = sanitizeCommandArgument(params.machineName);
+
+      if (!safeBlueprintPath || !safeMachineName) {
+        return { success: false, error: 'Blueprint path and machine name must be valid and non-empty.' };
+      }
+
       const commands: string[] = [
-        `AddAnimStateMachine ${params.blueprintPath} ${params.machineName}`
+        `AddAnimStateMachine ${safeBlueprintPath} ${safeMachineName}`
       ];
 
       for (const state of params.states) {
-        const animationName = state.animation ?? '';
+        // SECURITY: Sanitize state name and animation name
+        const safeStateName = sanitizeCommandArgument(state.name);
+        const safeAnimationName = state.animation ? sanitizeCommandArgument(state.animation) : '';
+
+        if (!safeStateName) {
+          continue; // Skip invalid state names
+        }
+
         commands.push(
-          `AddAnimState ${params.blueprintPath} ${params.machineName} ${state.name} ${animationName}`
+          `AddAnimState ${safeBlueprintPath} ${safeMachineName} ${safeStateName} ${safeAnimationName}`
         );
         if (state.isEntry) {
-          commands.push(`SetAnimStateEntry ${params.blueprintPath} ${params.machineName} ${state.name}`);
+          commands.push(`SetAnimStateEntry ${safeBlueprintPath} ${safeMachineName} ${safeStateName}`);
         }
         if (state.isExit) {
-          commands.push(`SetAnimStateExit ${params.blueprintPath} ${params.machineName} ${state.name}`);
+          commands.push(`SetAnimStateExit ${safeBlueprintPath} ${safeMachineName} ${safeStateName}`);
         }
       }
 
       if (params.transitions) {
         for (const transition of params.transitions) {
+          // SECURITY: Sanitize transition state names and condition
+          const safeSourceState = sanitizeCommandArgument(transition.sourceState);
+          const safeTargetState = sanitizeCommandArgument(transition.targetState);
+
+          if (!safeSourceState || !safeTargetState) {
+            continue; // Skip invalid transitions
+          }
+
           commands.push(
-            `AddAnimTransition ${params.blueprintPath} ${params.machineName} ${transition.sourceState} ${transition.targetState}`
+            `AddAnimTransition ${safeBlueprintPath} ${safeMachineName} ${safeSourceState} ${safeTargetState}`
           );
           if (transition.condition) {
-            commands.push(
-              `SetAnimTransitionRule ${params.blueprintPath} ${params.machineName} ${transition.sourceState} ${transition.targetState} ${transition.condition}`
-            );
+            const safeCondition = sanitizeCommandArgument(transition.condition);
+            // SECURITY: Only push command if condition is non-empty after sanitization
+            if (safeCondition) {
+              commands.push(
+                `SetAnimTransitionRule ${safeBlueprintPath} ${safeMachineName} ${safeSourceState} ${safeTargetState} ${safeCondition}`
+              );
+            }
           }
         }
       }
@@ -207,7 +233,7 @@ export class AnimationTools {
       await this.bridge.executeConsoleCommands(commands);
       return {
         success: true,
-        message: `State machine ${params.machineName} added to ${params.blueprintPath}`
+        message: `State machine ${safeMachineName} added to ${safeBlueprintPath}`
       };
     } catch (err) {
       return { success: false, error: `Failed to add state machine: ${err}` };
@@ -280,6 +306,8 @@ export class AnimationTools {
 
       // Call C++ bridge to create state machine in the Animation Blueprint
       if (this.automationBridge && typeof this.automationBridge.sendAutomationRequest === 'function') {
+        // Capture bridge for use in closures - we know it's defined here
+        const bridge = this.automationBridge;
         try {
           const payload = cleanObject({
             subAction: 'add_state_machine',
@@ -287,7 +315,7 @@ export class AnimationTools {
             stateMachineName: machineName
           });
 
-          const resp = await this.automationBridge.sendAutomationRequest('manage_animation_authoring', payload, { timeoutMs: 60000 });
+          const resp = await bridge.sendAutomationRequest('manage_animation_authoring', payload, { timeoutMs: 60000 });
           const result = resp?.result ?? resp;
           const resultObj = result && typeof result === 'object' ? result as Record<string, unknown> : undefined;
           const isSuccess = resp && resp.success !== false && !!resultObj;
@@ -304,26 +332,71 @@ export class AnimationTools {
               }
             });
 
-            // Add states if provided
-            for (const state of normalizedStates) {
-              await this.automationBridge.sendAutomationRequest('manage_animation_authoring', cleanObject({
-                subAction: 'add_state',
-                blueprintPath,
-                stateMachineName: machineName,
-                stateName: state.name
-              }), { timeoutMs: 30000 });
+            // Add states if provided - use Promise.all for parallel execution
+            // Track successfully added states for potential rollback
+            const addedStateNames: string[] = [];
+            if (normalizedStates.length > 0) {
+              const stateResults = await Promise.all(normalizedStates.map(state =>
+                bridge.sendAutomationRequest('manage_animation_authoring', cleanObject({
+                  subAction: 'add_state',
+                  blueprintPath,
+                  stateMachineName: machineName,
+                  stateName: state.name
+                }), { timeoutMs: 30000 })
+              ));
+              // Validate all state additions succeeded
+              const failedState = stateResults.find((r: { success?: boolean }) => r && r.success === false);
+              if (failedState) {
+                const failed = failedState as { error?: string; message?: string };
+                return {
+                  success: false,
+                  message: 'Failed to add one or more states',
+                  error: failed.error || failed.message || 'Unknown error'
+                };
+              }
+              // Track successfully added states
+              for (const state of normalizedStates) {
+                addedStateNames.push(state.name);
+              }
             }
 
-            // Add transitions if provided
-            for (const transition of normalizedTransitions) {
-              await this.automationBridge.sendAutomationRequest('manage_animation_authoring', cleanObject({
-                subAction: 'add_transition',
-                blueprintPath,
-                stateMachineName: machineName,
-                fromState: transition.sourceState,
-                toState: transition.targetState,
-                crossfadeDuration: 0.2
-              }), { timeoutMs: 30000 });
+            // Add transitions if provided - use Promise.all for parallel execution
+            if (normalizedTransitions.length > 0) {
+              const transitionResults = await Promise.all(normalizedTransitions.map(transition =>
+                bridge.sendAutomationRequest('manage_animation_authoring', cleanObject({
+                  subAction: 'add_transition',
+                  blueprintPath,
+                  stateMachineName: machineName,
+                  fromState: transition.sourceState,
+                  toState: transition.targetState,
+                  crossfadeDuration: 0.2
+                }), { timeoutMs: 30000 })
+              ));
+              // Validate all transition additions succeeded
+              const failedTransition = transitionResults.find((r: { success?: boolean }) => r && r.success === false);
+              if (failedTransition) {
+                const failed = failedTransition as { error?: string; message?: string };
+                
+                // Rollback: Delete any states that were added
+                if (addedStateNames.length > 0) {
+                  await Promise.all(addedStateNames.map(stateName =>
+                    bridge.sendAutomationRequest('manage_animation_authoring', cleanObject({
+                      subAction: 'delete_state',
+                      blueprintPath,
+                      stateMachineName: machineName,
+                      stateName
+                    }), { timeoutMs: 10000 }).catch(() => {
+                      // Ignore rollback failures - best effort cleanup
+                    })
+                  ));
+                }
+                
+                return {
+                  success: false,
+                  message: 'Failed to add one or more transitions (rolled back added states)',
+                  error: failed.error || failed.message || 'Unknown error'
+                };
+              }
             }
 
             return {
