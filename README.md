@@ -14,16 +14,28 @@ A comprehensive Model Context Protocol (MCP) server that enables AI assistants t
 
 ## Table of Contents
 
-- [Features](#features)
-- [Getting Started](#getting-started)
-- [Configuration](#configuration)
-- [Available Tools](#available-tools)
-- [GraphQL API](#graphql-api)
-- [Docker](#docker)
-- [Documentation](#documentation)
-- [Community](#community)
-- [Development](#development)
-- [Contributing](#contributing)
+- [Unreal Engine MCP Server](#unreal-engine-mcp-server)
+  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
+    - [Architecture](#architecture)
+  - [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Step 1: Install MCP Server](#step-1-install-mcp-server)
+    - [Step 2: Install Unreal Plugin](#step-2-install-unreal-plugin)
+    - [Step 3: Enable Required Plugins](#step-3-enable-required-plugins)
+    - [Step 4: Configure MCP Client](#step-4-configure-mcp-client)
+  - [Configuration](#configuration)
+    - [Environment Variables](#environment-variables)
+    - [LAN Access Configuration](#lan-access-configuration)
+  - [Available Tools](#available-tools)
+    - [Supported Asset Types](#supported-asset-types)
+  - [GraphQL API](#graphql-api)
+  - [Docker](#docker)
+  - [Documentation](#documentation)
+  - [Development](#development)
+  - [Community](#community)
+  - [Contributing](#contributing)
+  - [License](#license)
 
 ---
 
@@ -329,28 +341,6 @@ MCP_AUTOMATION_HOST=0.0.0.0
 ### Supported Asset Types
 
 Blueprints • Materials • Textures • Static Meshes • Skeletal Meshes • Levels • Sounds • Particles • Niagara Systems • Behavior Trees
-
----
-
-## WebAssembly Acceleration
-
-Optional WASM acceleration for computationally intensive operations. **Enabled by default** when available, falls back to TypeScript automatically.
-
-| Operation | Speedup |
-|-----------|---------|
-| JSON parsing | 5–8x |
-| Transform calculations | 5–10x |
-| Vector/matrix math | 5x |
-| Dependency resolution | 3–5x |
-
-### Building WASM (Optional)
-
-```bash
-cargo install wasm-pack  # Once per machine
-bun run build:wasm       # Builds  WASM
-```
-
-To disable: `WASM_ENABLED=false`
 
 ---
 
