@@ -1,18 +1,12 @@
 import { cleanObject } from '../../utils/safe-json.js';
 import { ITools } from '../../types/tool-interfaces.js';
-import type { GraphArgs, HandlerArgs } from '../../types/handler-types.js';
+import type { GraphArgs, HandlerArgs, AutomationResponse } from '../../types/handler-types.js';
 import { executeAutomationRequest } from './common-handlers.js';
+import { TOOL_ACTIONS } from '../../utils/action-constants.js';
 
-/** Response from automation requests */
-interface AutomationResponse {
-    success?: boolean;
-    error?: string;
-    message?: string;
-    result?: Record<string, unknown>;
-    [key: string]: unknown;
-}
+// AutomationResponse imported from types/handler-types.js
 
-/** Extended GraphArgs for internal processing */
+
 interface ProcessedGraphArgs extends GraphArgs {
     subAction?: string;
     nodeCategory?: string;
@@ -86,7 +80,8 @@ export async function handleGraphTools(toolName: string, action: string, args: G
 
     // Dispatch based on tool name
     switch (toolName) {
-        case 'manage_blueprint_graph':
+        case TOOL_ACTIONS.MANAGE_BLUEPRINT:
+        case 'manage_blueprint_graph': // Backward compat - callers still pass this
             return handleBlueprintGraph(action, args, tools);
         case 'manage_niagara_graph':
             return handleNiagaraGraph(action, args, tools);
@@ -177,9 +172,15 @@ async function handleBlueprintGraph(action: string, args: GraphArgs, tools: IToo
 
 async function handleNiagaraGraph(action: string, args: GraphArgs, tools: ITools): Promise<Record<string, unknown>> {
     const payload: ProcessedGraphArgs = { ...args, subAction: action };
-    // Map systemPath to assetPath if missing
-    if (payload.systemPath && !payload.assetPath) {
-        payload.assetPath = payload.systemPath;
+    // Normalize parameter aliases - tests may use 'system' instead of 'systemPath' or 'assetPath'
+    if (!payload.systemPath && args.system) {
+        payload.systemPath = args.system as string;
+    }
+    if (!payload.assetPath && payload.systemPath) {
+        payload.assetPath = payload.systemPath as string;
+    }
+    if (!payload.assetPath && args.system) {
+        payload.assetPath = args.system as string;
     }
     const res = await executeAutomationRequest(tools, 'manage_niagara_graph', payload as HandlerArgs, 'Automation bridge not available') as AutomationResponse;
     return cleanObject({ ...res, ...(res.result || {}) }) as Record<string, unknown>;

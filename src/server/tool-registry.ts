@@ -16,30 +16,18 @@ import { LevelResources } from '../resources/levels.js';
 import { ActorTools } from '../tools/actors.js';
 import { AssetTools } from '../tools/assets.js';
 import { EditorTools } from '../tools/editor.js';
-import { MaterialTools } from '../tools/materials.js';
-import { AnimationTools } from '../tools/animation.js';
-import { PhysicsTools } from '../tools/physics.js';
-import { NiagaraTools } from '../tools/niagara.js';
 import { BlueprintTools } from '../tools/blueprint.js';
 import { LevelTools } from '../tools/level.js';
-import { LightingTools } from '../tools/lighting.js';
 import { LandscapeTools } from '../tools/landscape.js';
 import { FoliageTools } from '../tools/foliage.js';
 import { EnvironmentTools } from '../tools/environment.js';
-import { DebugVisualizationTools } from '../tools/debug.js';
-import { PerformanceTools } from '../tools/performance.js';
-import { AudioTools } from '../tools/audio.js';
-import { UITools } from '../tools/ui.js';
 import { SequenceTools } from '../tools/sequence.js';
-import { IntrospectionTools } from '../tools/introspection.js';
-import { EngineTools } from '../tools/engine.js';
-import { BehaviorTreeTools } from '../tools/behavior-tree.js';
-import { InputTools } from '../tools/input.js';
-
 import { LogTools } from '../tools/logs.js';
+
 import { getProjectSetting } from '../utils/ini-reader.js';
 import { config } from '../config.js';
 import { mcpClients } from 'mcp-client-capabilities';
+import { dynamicToolManager } from '../tools/dynamic-tool-manager.js';
 
 // Parse default categories from config
 function parseDefaultCategories(): string[] {
@@ -90,7 +78,7 @@ export class ToolRegistry {
         private ensureConnected: () => Promise<boolean>
     ) { }
     
-    private async handlePipelineCall(args: Record<string, unknown>) {
+    private async handlePipelineCall(args: Record<string, unknown>): Promise<Record<string, unknown>> {
         const action = args.action as string;
         if (action === 'set_categories') {
             const newCats = Array.isArray(args.categories) ? args.categories as string[] : [];
@@ -105,58 +93,245 @@ export class ToolRegistry {
 
             return { success: true, message: `Categories updated to ${this.currentCategories.join(', ')}`, categories: this.currentCategories };
         } else if (action === 'list_categories') {
+            const categories = dynamicToolManager.listCategories();
             return { 
                 success: true, 
                 categories: this.currentCategories, 
-                available: ['core', 'world', 'authoring', 'gameplay', 'utility', 'all'] 
+                available: ['core', 'world', 'authoring', 'gameplay', 'utility', 'all'],
+                categoryDetails: categories.map(c => ({
+                    name: c.name,
+                    enabled: c.enabled,
+                    toolCount: c.toolCount,
+                    enabledCount: c.enabledCount
+                }))
             };
         } else if (action === 'get_status') {
+            const status = dynamicToolManager.getStatus();
             return { 
                 success: true, 
                 categories: this.currentCategories,
-                toolCount: consolidatedToolDefinitions.length,
-                filteredCount: consolidatedToolDefinitions.filter((t: ToolDefinition) => !t.category || this.currentCategories.includes(t.category) || this.currentCategories.includes('all')).length
+                toolCount: status.totalTools,
+                enabledCount: status.enabledTools,
+                disabledCount: status.disabledTools,
+                filteredCount: dynamicToolManager.getEnabledToolDefinitions().length
             };
         }
-        return { success: false, error: `Unknown pipeline action: ${action}` };
+        // Delegate unknown actions (like run_ubt) to the registered handler in consolidated-tool-handlers
+        // This allows handlePipelineTools to process run_ubt etc.
+        return { _delegateToHandler: true, action, args };
+    }
+
+    private async handleManageToolsCall(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+        const action = args.action as string;
+        type ToolCategory = 'core' | 'world' | 'authoring' | 'gameplay' | 'utility';
+        
+        // Helper to safely extract string array
+        const getStringArray = (key: string): string[] => {
+            const val = args[key];
+            if (Array.isArray(val)) {
+                return val.filter((v): v is string => typeof v === 'string');
+            }
+            return [];
+        };
+
+        // Helper to safely extract string
+        const getString = (key: string): string | undefined => {
+            const val = args[key];
+            return typeof val === 'string' ? val : undefined;
+        };
+
+        switch (action) {
+            case 'list_tools': {
+                const toolStates = dynamicToolManager.listTools();
+                const tools = toolStates.map(state => ({
+                    name: state.name,
+                    enabled: state.enabled,
+                    category: state.category,
+                    description: state.description.substring(0, 100) + (state.description.length > 100 ? '...' : '')
+                }));
+                const status = dynamicToolManager.getStatus();
+                return {
+                    success: true,
+                    tools,
+                    totalTools: status.totalTools,
+                    enabledCount: status.enabledTools,
+                    disabledCount: status.disabledTools,
+                    message: `Listed ${tools.length} tools (${status.enabledTools} enabled, ${status.disabledTools} disabled)`
+                };
+            }
+
+            case 'list_categories': {
+                const categories = dynamicToolManager.listCategories();
+                return {
+                    success: true,
+                    categories: categories.map(cat => ({
+                        name: cat.name,
+                        enabled: cat.enabled,
+                        toolCount: cat.toolCount,
+                        enabledCount: cat.enabledCount
+                    })),
+                    totalCategories: categories.length,
+                    message: `Listed ${categories.length} categories`
+                };
+            }
+
+            case 'enable_tools': {
+                // Accept both 'tools' and 'toolNames' for flexibility
+                const toolNames = getStringArray('tools').length > 0 
+                    ? getStringArray('tools') 
+                    : getStringArray('toolNames');
+                if (toolNames.length === 0) {
+                    return { success: false, error: 'No tools specified. Provide tools array.', errorCode: 'MISSING_TOOLS' };
+                }
+                const result = dynamicToolManager.enableTools(toolNames);
+                return {
+                    success: true,
+                    enabled: result.enabled,
+                    notFound: result.notFound,
+                    message: result.notFound.length > 0 
+                        ? `Enabled ${result.enabled.length} tools. ${result.notFound.length} not found.`
+                        : `Enabled ${result.enabled.length} tools`
+                };
+            }
+
+            case 'disable_tools': {
+                // Accept both 'tools' and 'toolNames' for flexibility
+                const toolNames = getStringArray('tools').length > 0 
+                    ? getStringArray('tools') 
+                    : getStringArray('toolNames');
+                if (toolNames.length === 0) {
+                    return { success: false, error: 'No tools specified. Provide tools array.', errorCode: 'MISSING_TOOLS' };
+                }
+                const result = dynamicToolManager.disableTools(toolNames);
+                if (result.protected.length > 0 && result.disabled.length === 0) {
+                    return { 
+                        success: false, 
+                        error: `Cannot disable protected tools: ${result.protected.join(', ')}`,
+                        errorCode: 'PROTECTED_TOOLS'
+                    };
+                }
+                const messages: string[] = [];
+                if (result.disabled.length > 0) messages.push(`Disabled ${result.disabled.length} tools`);
+                if (result.notFound.length > 0) messages.push(`${result.notFound.length} not found`);
+                if (result.protected.length > 0) messages.push(`${result.protected.length} protected`);
+                return {
+                    success: true,
+                    disabled: result.disabled,
+                    notFound: result.notFound,
+                    protected: result.protected,
+                    message: messages.join('. ')
+                };
+            }
+
+            case 'enable_category': {
+                const category = getString('category') as ToolCategory | undefined;
+                if (!category) {
+                    return { success: false, error: 'No category specified.', errorCode: 'MISSING_CATEGORY' };
+                }
+                const validCategories: ToolCategory[] = ['core', 'world', 'authoring', 'gameplay', 'utility'];
+                if (!validCategories.includes(category)) {
+                    return { 
+                        success: false, 
+                        error: `Invalid category '${category}'. Valid: ${validCategories.join(', ')}`,
+                        errorCode: 'INVALID_CATEGORY'
+                    };
+                }
+                const result = dynamicToolManager.enableCategory(category);
+                if (result.notFound) {
+                    return { success: false, error: `Category '${category}' not found`, errorCode: 'CATEGORY_NOT_FOUND' };
+                }
+                return {
+                    success: true,
+                    category,
+                    enabled: result.enabled,
+                    message: `Enabled category '${category}' (${result.enabled.length} tools)`
+                };
+            }
+
+            case 'disable_category': {
+                const category = getString('category') as ToolCategory | undefined;
+                if (!category) {
+                    return { success: false, error: 'No category specified.', errorCode: 'MISSING_CATEGORY' };
+                }
+                const validCategories: ToolCategory[] = ['core', 'world', 'authoring', 'gameplay', 'utility'];
+                if (!validCategories.includes(category)) {
+                    return { 
+                        success: false, 
+                        error: `Invalid category '${category}'. Valid: ${validCategories.join(', ')}`,
+                        errorCode: 'INVALID_CATEGORY'
+                    };
+                }
+                const result = dynamicToolManager.disableCategory(category);
+                if (result.notFound) {
+                    return { success: false, error: `Category '${category}' not found`, errorCode: 'CATEGORY_NOT_FOUND' };
+                }
+                if (result.protected.length > 0 && result.disabled.length === 0) {
+                    return { 
+                        success: false, 
+                        error: `Cannot fully disable protected category '${category}'. Protected tools: ${result.protected.join(', ')}`,
+                        errorCode: 'PROTECTED_CATEGORY'
+                    };
+                }
+                return {
+                    success: true,
+                    category,
+                    disabled: result.disabled,
+                    protected: result.protected,
+                    message: `Disabled category '${category}' (${result.disabled.length} tools disabled)`
+                };
+            }
+
+            case 'get_status': {
+                const status = dynamicToolManager.getStatus();
+                return {
+                    success: true,
+                    totalTools: status.totalTools,
+                    enabledTools: status.enabledTools,
+                    disabledTools: status.disabledTools,
+                    categories: status.categories.map(cat => ({
+                        name: cat.name,
+                        enabled: cat.enabled,
+                        toolCount: cat.toolCount,
+                        enabledCount: cat.enabledCount
+                    })),
+                    message: `${status.enabledTools}/${status.totalTools} tools enabled`
+                };
+            }
+
+            case 'reset': {
+                const result = dynamicToolManager.reset();
+                return {
+                    success: true,
+                    enabled: result.enabled,
+                    message: `Reset complete. ${result.enabled} tools re-enabled.`
+                };
+            }
+
+            default:
+                return { 
+                    success: false, 
+                    error: `Unknown action: ${action}. Available: list_tools, list_categories, enable_tools, disable_tools, enable_category, disable_category, get_status, reset`,
+                    errorCode: 'UNKNOWN_ACTION'
+                };
+        }
     }
 
     register() {
-        // Initialize tools
+        // Initialize tools needed for file I/O operations
         const actorTools = new ActorTools(this.bridge);
         const assetTools = new AssetTools(this.bridge);
         const editorTools = new EditorTools(this.bridge);
-        const materialTools = new MaterialTools(this.bridge);
-        const animationTools = new AnimationTools(this.bridge);
-        const physicsTools = new PhysicsTools(this.bridge);
-        const niagaraTools = new NiagaraTools(this.bridge);
         const blueprintTools = new BlueprintTools(this.bridge);
         const levelTools = new LevelTools(this.bridge);
-        const lightingTools = new LightingTools(this.bridge);
         const landscapeTools = new LandscapeTools(this.bridge);
         const foliageTools = new FoliageTools(this.bridge);
         const environmentTools = new EnvironmentTools(this.bridge);
-        const debugTools = new DebugVisualizationTools(this.bridge);
-        const performanceTools = new PerformanceTools(this.bridge);
-        const audioTools = new AudioTools(this.bridge);
-        const uiTools = new UITools(this.bridge);
         const sequenceTools = new SequenceTools(this.bridge);
-        const introspectionTools = new IntrospectionTools(this.bridge);
-        const engineTools = new EngineTools(this.bridge);
-        const behaviorTreeTools = new BehaviorTreeTools(this.bridge);
-
-        const inputTools = new InputTools();
         const logTools = new LogTools(this.bridge);
 
-        // Wire AutomationBridge
-        const toolsWithAutomation = [
-            materialTools, animationTools, physicsTools, niagaraTools,
-            lightingTools, landscapeTools, foliageTools, debugTools,
-            performanceTools, audioTools, uiTools, introspectionTools,
+        // Wire AutomationBridge for EnvironmentTools (needed for non-file I/O operations)
+        environmentTools.setAutomationBridge(this.automationBridge);
 
-            engineTools, environmentTools, inputTools
-        ];
-        toolsWithAutomation.forEach(t => t.setAutomationBridge(this.automationBridge));
 
         // Lightweight system tools facade
         const systemTools = {
@@ -285,14 +460,29 @@ export class ToolRegistry {
 
             this.logger.info(`Serving tools for categories: ${effectiveCategories.join(', ')} (client=${clientName || 'unknown'}, supportsListChanged=${supportsListChanged})`);
             
-            // Filter by category AND hide manage_pipeline from clients that can't use it
-            const filtered = consolidatedToolDefinitions
-                .filter((t: ToolDefinition) => 
-                    !t.category || effectiveCategories.includes(t.category) || effectiveCategories.includes('all')
-                )
-                .filter((t: ToolDefinition) => 
-                    supportsListChanged || t.name !== 'manage_pipeline'
-                );
+            // Use DynamicToolManager for filtering
+            const allTools = dynamicToolManager.getAllToolDefinitions();
+            const status = dynamicToolManager.getStatus();
+            
+            // Filter by: 1) tool enabled in DynamicToolManager, 2) category, 3) hide manage_pipeline from non-dynamic clients
+            const filtered = allTools
+                .filter((t: ToolDefinition) => {
+                    // Check if tool is enabled
+                    if (!dynamicToolManager.isToolEnabled(t.name)) return false;
+                    
+                    // Check category filter
+                    const category = t.category;
+                    if (category && !effectiveCategories.includes(category) && !effectiveCategories.includes('all')) {
+                        return false;
+                    }
+                    
+                    // Hide manage_pipeline from clients that can't use it
+                    if (!supportsListChanged && t.name === 'manage_pipeline') return false;
+                    
+                    return true;
+                });
+            
+            this.logger.debug(`Tool filtering: ${status.enabledTools}/${status.totalTools} enabled, ${filtered.length} visible`);
             
             const sanitized = filtered.map((t: ToolDefinition) => {
                 try {
@@ -311,7 +501,27 @@ export class ToolRegistry {
             let args: Record<string, unknown> = request.params.arguments || {};
 
             if (name === 'manage_pipeline') {
-                return { content: [{ type: 'text', text: JSON.stringify(await this.handlePipelineCall(args)) }] };
+                const result = await this.handlePipelineCall(args);
+                // If handler indicates delegation, fall through to consolidated handler
+                if (result._delegateToHandler) {
+                    // Fall through to the consolidated handler below
+                } else {
+                    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+                }
+            }
+
+            // Handle manage_tools for dynamic tool management
+            if (name === 'manage_tools') {
+                const result = await this.handleManageToolsCall(args);
+                // Trigger list_changed notification if tools were modified
+                const action = args.action as string;
+                if (['enable_tools', 'disable_tools', 'enable_category', 'disable_category', 'reset'].includes(action || '')) {
+                    this.server.notification({
+                        method: 'notifications/tools/list_changed',
+                        params: {}
+                    }).catch(err => this.logger.error('Failed to send list_changed notification', err));
+                }
+                return { content: [{ type: 'text', text: JSON.stringify(result) }] };
             }
 
             const startTime = Date.now();
@@ -331,12 +541,9 @@ export class ToolRegistry {
             }
 
             const tools = {
-                actorTools, assetTools, materialTools, editorTools, animationTools,
-                physicsTools, niagaraTools, blueprintTools, levelTools, lightingTools,
-                landscapeTools, foliageTools, environmentTools, debugTools, performanceTools,
-                audioTools, systemTools, uiTools, sequenceTools, introspectionTools,
-
-                engineTools, behaviorTreeTools, inputTools, logTools,
+                actorTools, assetTools, editorTools, blueprintTools, levelTools,
+                landscapeTools, foliageTools, environmentTools, sequenceTools, logTools,
+                systemTools,
                 elicit: elicitation.elicit,
                 supportsElicitation: elicitation.supports,
                 elicitationTimeoutMs: this.defaultElicitationTimeoutMs,

@@ -1,5 +1,3 @@
-import { commonSchemas } from './tool-definition-utils.js';
-/** MCP Tool Definition type for explicit annotation to avoid TS7056 */
 export interface ToolDefinition {
   category?: 'core' | 'world' | 'authoring' | 'gameplay' | 'utility';
   name: string;
@@ -8,16 +6,20 @@ export interface ToolDefinition {
   outputSchema?: Record<string, unknown>;
   [key: string]: unknown;
 }
+import { commonSchemas } from './tool-definition-utils.js';
 export const consolidatedToolDefinitions: ToolDefinition[] = [
   {
     name: 'manage_pipeline',
-    description: 'Filter visible tools by category. Actions: list_categories (show available), set_categories (enable specific), get_status (current state). Categories: core, world, authoring, gameplay, utility, all.',
+    description: 'Build automation and pipeline control. Actions: run_ubt (compile targets), list_categories (show tool categories), get_status (bridge status). Routes to system_control internally.',
     category: 'core',
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['set_categories', 'list_categories', 'get_status'], description: 'list_categories: show available. set_categories: enable categories. get_status: current state.' },
-        categories: { type: 'array', items: commonSchemas.stringProp, description: 'Categories: core, world, authoring, gameplay, utility, all' }
+        action: { type: 'string', enum: ['run_ubt', 'list_categories', 'get_status'], description: 'run_ubt: compile with UnrealBuildTool. list_categories: show available tool categories. get_status: get bridge status.' },
+        target: { type: 'string', description: 'Build target name (e.g., MyProjectEditor)' },
+        platform: { type: 'string', description: 'Target platform (Win64, Linux, Mac)' },
+        configuration: { type: 'string', description: 'Build configuration (Development, Shipping, Debug)' },
+        arguments: { type: 'string', description: 'Additional UBT arguments' }
       },
       required: ['action']
     },
@@ -25,7 +27,36 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
       type: 'object',
       properties: {
         ...commonSchemas.outputBase,
-        categories: { type: 'array', items: commonSchemas.stringProp }
+        output: { type: 'string', description: 'Build output' },
+        command: { type: 'string', description: 'Executed command' }
+      }
+    }
+  },
+  {
+    name: 'manage_tools',
+    description: 'Dynamic MCP tool management. Enable/disable tools and categories at runtime. Actions: list_tools, list_categories, enable_tools, disable_tools, enable_category, disable_category, get_status, reset.',
+    category: 'core',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { 
+          type: 'string', 
+          enum: ['list_tools', 'list_categories', 'enable_tools', 'disable_tools', 'enable_category', 'disable_category', 'get_status', 'reset'],
+          description: 'list_tools: show all tools with status. list_categories: show categories. enable/disable_tools: toggle specific tools. enable/disable_category: toggle category. get_status: current state. reset: restore defaults.'
+        },
+        tools: { type: 'array', items: commonSchemas.stringProp, description: 'Tool names to enable/disable' },
+        category: { type: 'string', description: 'Category name to enable/disable (core, world, authoring, gameplay, utility)' }
+      },
+      required: ['action']
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        ...commonSchemas.outputBase,
+        tools: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, enabled: { type: 'boolean' }, category: { type: 'string' } } } },
+        categories: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, enabled: { type: 'boolean' }, toolCount: { type: 'number' } } } },
+        enabledCount: { type: 'number' },
+        disabledCount: { type: 'number' }
       }
     }
   },
@@ -39,7 +70,7 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
         action: {
           type: 'string',
           enum: [
-            'list', 'import', 'duplicate', 'rename', 'move', 'delete', 'delete_asset', 'delete_assets', 'create_folder', 'search_assets',
+            'list', 'import', 'duplicate', 'duplicate_asset', 'rename', 'rename_asset', 'move', 'move_asset', 'delete', 'delete_asset', 'delete_assets', 'create_folder', 'search_assets',
             'get_dependencies', 'get_source_control_state', 'analyze_graph', 'get_asset_graph', 'create_thumbnail', 'set_tags', 'get_metadata', 'set_metadata', 'validate', 'fixup_redirectors', 'find_by_tag', 'generate_report',
             'create_material', 'create_material_instance', 'create_render_target', 'generate_lods', 'add_material_parameter', 'list_instances', 'reset_instance_parameters', 'exists', 'get_material_stats',
             'nanite_rebuild_mesh', 'bulk_rename', 'bulk_delete', 'source_control_checkout', 'source_control_submit',
@@ -117,7 +148,16 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
         coordinateIndex: commonSchemas.numberProp,
         parameterType: commonSchemas.stringProp,
         nodes: commonSchemas.arrayOfObjects,
-        tags: commonSchemas.arrayOfStrings
+        tags: commonSchemas.arrayOfStrings,
+        // Handler aliases (alternative parameter names accepted by handler)
+        folderPath: commonSchemas.directoryPath,
+        sourceNode: commonSchemas.sourceNodeId,
+        targetNode: commonSchemas.targetNodeId,
+        outputPin: commonSchemas.sourcePin,
+        inputPin: commonSchemas.targetPin,
+        type: commonSchemas.stringProp,
+        defaultValue: commonSchemas.value,
+        expressionIndex: commonSchemas.nodeId
       },
       required: ['action']
     },
@@ -237,7 +277,7 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
       properties: {
         ...commonSchemas.outputBase,
         blueprintPath: commonSchemas.blueprintPath,
-        blueprint: commonSchemas.objectProp
+        blueprint: { oneOf: [{ type: 'object' }, { type: 'string' }], description: 'Blueprint data object or path string.' }
       }
     }
   },
@@ -251,11 +291,25 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
         action: {
           type: 'string',
           enum: [
-            'spawn', 'spawn_blueprint', 'delete', 'delete_by_tag', 'duplicate',
-            'apply_force', 'set_transform', 'get_transform', 'set_visibility',
-            'add_component', 'set_component_properties', 'get_components',
-            'add_tag', 'remove_tag', 'find_by_tag', 'find_by_name', 'list', 'set_blueprint_variables',
-            'create_snapshot', 'attach', 'detach'
+            'spawn', 'spawn_actor', 'spawn_blueprint',
+            'delete', 'destroy_actor', 'delete_by_tag', 'duplicate',
+            'apply_force',
+            'set_transform', 'teleport_actor', 'set_actor_location', 'set_actor_rotation', 'set_actor_scale', 'set_actor_transform',
+            'get_transform', 'get_actor_transform',
+            'set_visibility', 'set_actor_visible',
+            'add_component', 'remove_component',
+            'set_component_properties', 'set_component_property', 'get_component_property',
+            'get_components', 'get_actor_components',
+            'get_actor_bounds',
+            'add_tag', 'remove_tag',
+            'find_by_tag', 'find_actors_by_tag',
+            'find_by_name', 'find_actors_by_name',
+            'find_by_class', 'find_actors_by_class',
+            'list', 'set_blueprint_variables',
+            'create_snapshot',
+            'attach', 'attach_actor',
+            'detach', 'detach_actor',
+            'set_actor_collision', 'call_actor_function'
           ],
           description: 'Action'
         },
@@ -297,7 +351,7 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
             }
           }
         },
-        data: commonSchemas.objectProp
+        data: commonSchemas.nullableObjectProp
       }
     }
   },
@@ -311,11 +365,20 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
         action: {
           type: 'string',
           enum: [
-            'play', 'stop', 'stop_pie', 'pause', 'resume', 'set_game_speed', 'eject', 'possess',
-            'set_camera', 'set_camera_position', 'set_camera_fov', 'set_view_mode',
-            'set_viewport_resolution', 'console_command', 'execute_command', 'screenshot', 'step_frame',
-            'start_recording', 'stop_recording', 'create_bookmark', 'jump_to_bookmark',
-            'set_preferences', 'set_viewport_realtime', 'open_asset', 'simulate_input'
+            'play', 'stop', 'stop_pie', 'pause', 'resume', 'eject', 'possess',
+            'set_game_speed', 'set_fixed_delta_time',
+            'set_camera', 'set_camera_position', 'set_viewport_camera', 'set_camera_fov',
+            'set_view_mode', 'set_viewport_resolution',
+            'console_command', 'execute_command',
+            'screenshot', 'take_screenshot', 'step_frame', 'single_frame_step',
+            'start_recording', 'stop_recording',
+            'create_bookmark', 'jump_to_bookmark',
+            'set_preferences', 'set_viewport_realtime',
+            'open_asset', 'close_asset', 'simulate_input',
+            'open_level', 'focus_actor',
+            'show_stats', 'hide_stats',
+            'set_editor_mode', 'set_immersive_mode', 'set_game_view',
+            'undo', 'redo', 'save_all'
           ],
           description: 'Editor action'
         },
@@ -331,9 +394,27 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
         command: commonSchemas.stringProp,
         steps: commonSchemas.integerProp,
         bookmarkName: commonSchemas.stringProp,
+        // Path parameters for various actions
         assetPath: commonSchemas.assetPath,
-        keyName: commonSchemas.stringProp,
-        eventType: { type: 'string', enum: ['KeyDown', 'KeyUp', 'Both'] }
+        levelPath: commonSchemas.levelPath,
+        path: commonSchemas.directoryPath,
+        // Actor-related parameters
+        actorName: commonSchemas.actorName,
+        name: commonSchemas.name,
+        // Action-specific parameters
+        mode: commonSchemas.stringProp,
+        deltaTime: commonSchemas.numberProp,
+        resolution: commonSchemas.resolution,
+        realtime: commonSchemas.booleanProp,
+        stat: commonSchemas.stringProp,
+        category: commonSchemas.stringProp,
+        preferences: commonSchemas.objectProp,
+        section: commonSchemas.stringProp,
+        key: commonSchemas.stringProp,
+        value: commonSchemas.value,
+        // simulate_input parameters
+        inputAction: commonSchemas.stringProp,
+        axis: commonSchemas.stringProp
       },
       required: ['action']
     },
@@ -354,317 +435,58 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
         action: {
           type: 'string',
           enum: [
-            'load', 'save', 'save_as', 'save_level_as', 'stream', 'create_level', 'create_light', 'build_lighting',
-            'set_metadata', 'load_cells', 'set_datalayer',
-            'export_level', 'import_level', 'list_levels', 'get_summary', 'delete', 'validate_level',
-            'cleanup_invalid_datalayers', 'add_sublevel'
+            'load', 'save', 'save_as', 'save_level_as', 'stream', 'unload', 'create_level', 'create_light', 'build_lighting',
+            'set_metadata', 'load_cells', 'set_datalayer', 'create_datalayer',
+            'export_level', 'import_level', 'list_levels', 'get_summary', 'delete', 'delete_level', 'validate_level',
+            'cleanup_invalid_datalayers', 'add_sublevel', 'rename_level', 'duplicate_level', 'get_current_level'
           ],
           description: 'Action'
         },
+        // Level path parameters
         levelPath: commonSchemas.levelPath,
+        levelPaths: commonSchemas.arrayOfStrings,
         levelName: commonSchemas.stringProp,
+        path: commonSchemas.directoryPathForCreation,
+        // Save/export/import paths
+        savePath: commonSchemas.savePath,
+        destinationPath: commonSchemas.destinationPath,
+        targetPath: commonSchemas.directoryPath,
+        exportPath: commonSchemas.exportPath,
+        packagePath: commonSchemas.directoryPath,
+        sourcePath: commonSchemas.sourcePath,
+        // Sublevel parameters
+        sublevelPath: commonSchemas.levelPath,
+        parentLevel: commonSchemas.parentLevel,
+        parentPath: commonSchemas.directoryPath,
+        streamingMethod: commonSchemas.stringProp,
+        // Streaming control
         streaming: commonSchemas.booleanProp,
         shouldBeLoaded: commonSchemas.booleanProp,
         shouldBeVisible: commonSchemas.booleanProp,
-        lightType: { type: 'string', enum: ['Directional', 'Point', 'Spot', 'Rect'] },
-        location: commonSchemas.location,
+        // Light creation
+        lightType: { type: 'string', enum: ['Directional', 'Point', 'Spot', 'Rect', 'DirectionalLight', 'PointLight', 'SpotLight', 'RectLight', 'directional', 'point', 'spot', 'rect'], description: 'Light type. Accepts short names (Point), class names (PointLight), or lowercase (point).' },
         intensity: commonSchemas.numberProp,
-        quality: commonSchemas.stringProp,
-        min: commonSchemas.arrayOfNumbers,
-        max: commonSchemas.arrayOfNumbers,
-        dataLayerLabel: commonSchemas.stringProp,
-        dataLayerState: commonSchemas.stringProp,
-        recursive: commonSchemas.recursive,
-        exportPath: commonSchemas.outputPath,
-        packagePath: commonSchemas.assetPath,
-        destinationPath: commonSchemas.destinationPath,
-        note: commonSchemas.stringProp,
-        levelPaths: commonSchemas.arrayOfStrings,
-        subLevelPath: commonSchemas.levelPath,
-        parentLevel: commonSchemas.stringProp,
-        streamingMethod: { type: 'string', enum: ['Blueprint', 'AlwaysLoaded'] }
-      },
-      required: ['action']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        ...commonSchemas.outputBase,
-        data: commonSchemas.objectProp
-      }
-    }
-  },
-  {
-    name: 'animation_physics',
-    category: 'utility',
-    description: 'Create Animation BPs, Montages, Blend Spaces, IK rigs, ragdolls, vehicles, and author animation sequences/curves.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        action: {
-          type: 'string',
-          enum: [
-            // Runtime animation & physics
-            'create_animation_bp', 'play_montage', 'setup_ragdoll', 'activate_ragdoll', 'configure_vehicle',
-            'create_blend_space', 'create_state_machine', 'setup_ik', 'create_procedural_anim',
-            'create_blend_tree', 'setup_retargeting', 'setup_physics_simulation', 'cleanup',
-            'create_animation_asset', 'add_notify',
-            // Animation authoring (merged from manage_animation_authoring)
-            'create_animation_sequence', 'set_sequence_length', 'add_bone_track', 'set_bone_key', 'set_curve_key',
-            'add_notify_state', 'add_sync_marker', 'set_root_motion_settings', 'set_additive_settings',
-            'create_montage', 'add_montage_section', 'add_montage_slot', 'set_section_timing',
-            'add_montage_notify', 'set_blend_in', 'set_blend_out', 'link_sections',
-            'create_blend_space_1d', 'create_blend_space_2d', 'add_blend_sample', 'set_axis_settings', 'set_interpolation_settings',
-            'create_aim_offset', 'add_aim_offset_sample',
-            'create_anim_blueprint', 'add_state_machine', 'add_state', 'add_transition', 'set_transition_rules',
-            'add_blend_node', 'add_cached_pose', 'add_slot_node', 'add_layered_blend_per_bone', 'set_anim_graph_node_value',
-            'create_control_rig', 'add_control', 'add_rig_unit', 'connect_rig_elements', 'create_pose_library',
-            'create_ik_rig', 'add_ik_chain', 'create_ik_retargeter', 'set_retarget_chain_mapping',
-            'get_animation_info'
-          ],
-          description: 'Action'
-        },
-        name: commonSchemas.name,
-        actorName: commonSchemas.actorName,
-        skeletonPath: commonSchemas.skeletonPath,
-        montagePath: commonSchemas.animationPath,
-        animationPath: commonSchemas.animationPath,
-        playRate: commonSchemas.numberProp,
-        physicsAssetName: commonSchemas.stringProp,
-        meshPath: commonSchemas.meshPath,
-        vehicleName: commonSchemas.stringProp,
-        vehicleType: commonSchemas.stringProp,
-        savePath: commonSchemas.savePath,
-        // Authoring properties (merged from manage_animation_authoring)
-        path: commonSchemas.directoryPathForCreation,
-        assetPath: commonSchemas.assetPath,
-        skeletalMeshPath: commonSchemas.skeletalMeshPath,
-        blueprintPath: commonSchemas.blueprintPath,
-        save: commonSchemas.save,
-        numFrames: commonSchemas.numFrames,
-        frameRate: commonSchemas.frameRate,
-        boneName: commonSchemas.boneName,
-        frame: commonSchemas.frame,
+        color: commonSchemas.color,
         location: commonSchemas.location,
         rotation: commonSchemas.rotation,
-        scale: commonSchemas.scale,
-        curveName: commonSchemas.curveName,
-        value: commonSchemas.numberProp,
-        createIfMissing: commonSchemas.booleanProp,
-        notifyClass: commonSchemas.notifyClass,
-        notifyName: commonSchemas.notifyName,
-        trackIndex: commonSchemas.trackIndex,
-        startFrame: commonSchemas.startFrame,
-        endFrame: commonSchemas.endFrame,
-        markerName: commonSchemas.markerName,
-        enableRootMotion: commonSchemas.booleanProp,
-        rootMotionRootLock: commonSchemas.stringProp,
-        forceRootLock: commonSchemas.booleanProp,
-        additiveAnimType: commonSchemas.stringProp,
-        basePoseType: commonSchemas.stringProp,
-        basePoseAnimation: commonSchemas.stringProp,
-        basePoseFrame: commonSchemas.numberProp,
-        slotName: commonSchemas.slotName,
-        sectionName: commonSchemas.sectionName,
-        startTime: commonSchemas.startTime,
-        length: commonSchemas.numberProp,
-        time: commonSchemas.numberProp,
-        blendTime: commonSchemas.blendTime,
-        blendOption: commonSchemas.stringProp,
-        fromSection: commonSchemas.fromSection,
-        toSection: commonSchemas.toSection,
-        axisName: commonSchemas.axisName,
-        axisMin: commonSchemas.minValue,
-        axisMax: commonSchemas.maxValue,
-        horizontalAxisName: commonSchemas.horizontalAxisName,
-        horizontalMin: commonSchemas.numberProp,
-        horizontalMax: commonSchemas.numberProp,
-        verticalAxisName: commonSchemas.verticalAxisName,
-        verticalMin: commonSchemas.numberProp,
-        verticalMax: commonSchemas.numberProp,
-        sampleValue: commonSchemas.value,
-        axis: commonSchemas.stringProp,
-        minValue: commonSchemas.numberProp,
-        maxValue: commonSchemas.numberProp,
-        gridDivisions: commonSchemas.numberProp,
-        interpolationType: commonSchemas.stringProp,
-        targetWeightInterpolationSpeed: commonSchemas.numberProp,
-        yaw: commonSchemas.numberProp,
-        pitch: commonSchemas.numberProp,
-        parentClass: commonSchemas.parentClass,
-        stateMachineName: commonSchemas.stateMachineName,
-        stateName: commonSchemas.stateName,
-        isEntryState: commonSchemas.booleanProp,
-        fromState: commonSchemas.stringProp,
-        toState: commonSchemas.stringProp,
-        blendLogicType: commonSchemas.stringProp,
-        automaticTriggerRule: commonSchemas.stringProp,
-        automaticTriggerTime: commonSchemas.numberProp,
-        blendType: commonSchemas.stringProp,
-        nodeName: commonSchemas.nodeName,
-        x: commonSchemas.nodeX,
-        y: commonSchemas.nodeY,
-        cacheName: commonSchemas.cacheName,
-        layerSetup: commonSchemas.arrayOfObjects,
-        propertyName: commonSchemas.propertyName,
-        controlName: commonSchemas.controlName,
-        controlType: commonSchemas.stringProp,
-        parentBone: commonSchemas.parentBone,
-        parentControl: commonSchemas.parentControl,
-        unitType: commonSchemas.stringProp,
-        unitName: commonSchemas.unitName,
-        settings: commonSchemas.objectProp,
-        sourceElement: commonSchemas.sourceElement,
-        sourcePin: commonSchemas.sourcePin,
-        targetElement: commonSchemas.targetElement,
-        targetPin: commonSchemas.targetPin,
-        chainName: commonSchemas.chainName,
-        startBone: commonSchemas.startBone,
-        endBone: commonSchemas.endBone,
-        goal: commonSchemas.goal,
-        sourceIKRigPath: commonSchemas.sourceIKRigPath,
-        targetIKRigPath: commonSchemas.targetIKRigPath,
-        sourceChain: commonSchemas.sourceChain,
-        targetChain: commonSchemas.targetChain
-      },
-      required: ['action']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        ...commonSchemas.outputBase,
-        assetPath: commonSchemas.assetPath,
-        animationInfo: commonSchemas.objectProp
-      }
-    }
-  },
-  {
-    name: 'manage_effect',
-    category: 'utility',
-    description: 'Spawn Niagara/Cascade particles, draw debug shapes, edit VFX node graphs, and author Niagara systems/emitters.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        action: {
-          type: 'string',
-          enum: [
-            // Runtime VFX control
-            'particle', 'niagara', 'debug_shape', 'spawn_niagara', 'create_dynamic_light',
-            'create_niagara_system', 'create_niagara_emitter',
-            'create_volumetric_fog', 'create_particle_trail', 'create_environment_effect', 'create_impact_effect', 'create_niagara_ribbon',
-            'activate', 'activate_effect', 'deactivate', 'reset', 'advance_simulation',
-            'add_niagara_module', 'connect_niagara_pins', 'remove_niagara_node', 'set_niagara_parameter',
-            'clear_debug_shapes', 'cleanup', 'list_debug_shapes',
-            // Niagara authoring (merged from manage_niagara_authoring)
-            'add_emitter_to_system', 'set_emitter_properties',
-            'add_spawn_rate_module', 'add_spawn_burst_module', 'add_spawn_per_unit_module',
-            'add_initialize_particle_module', 'add_particle_state_module',
-            'add_force_module', 'add_velocity_module', 'add_acceleration_module',
-            'add_size_module', 'add_color_module',
-            'add_sprite_renderer_module', 'add_mesh_renderer_module', 'add_ribbon_renderer_module', 'add_light_renderer_module',
-            'add_collision_module', 'add_kill_particles_module', 'add_camera_offset_module',
-            'add_user_parameter', 'set_parameter_value', 'bind_parameter_to_source',
-            'add_skeletal_mesh_data_interface', 'add_static_mesh_data_interface', 'add_spline_data_interface',
-            'add_audio_spectrum_data_interface', 'add_collision_query_data_interface',
-            'add_event_generator', 'add_event_receiver', 'configure_event_payload',
-            'enable_gpu_simulation', 'add_simulation_stage',
-            'get_niagara_info', 'validate_niagara_system'
-          ],
-          description: 'Action'
-        },
-        name: commonSchemas.name,
-        systemName: commonSchemas.stringProp,
-        systemPath: commonSchemas.niagaraPath,
-        preset: { type: 'string', description: 'Path to particle system asset.' },
-        location: commonSchemas.location,
-        scale: commonSchemas.numberProp,
-        shape: { type: 'string', description: 'Supported: sphere, box, cylinder, line, cone, capsule, arrow, plane' },
-        size: commonSchemas.numberProp,
-        color: commonSchemas.color,
-        modulePath: commonSchemas.assetPath,
-        emitterName: commonSchemas.stringProp,
-        pinName: commonSchemas.pinName,
-        linkedTo: commonSchemas.stringProp,
-        parameterName: commonSchemas.parameterName,
-        parameterType: commonSchemas.stringProp,
-        type: commonSchemas.stringProp,
-        value: commonSchemas.value,
-        filter: commonSchemas.filter,
-        // Authoring properties (merged from manage_niagara_authoring)
-        path: commonSchemas.directoryPathForCreation,
-        assetPath: commonSchemas.assetPath,
-        emitterPath: commonSchemas.emitterPath,
-        save: commonSchemas.save,
-        emitterProperties: commonSchemas.objectProp,
-        spawnRate: commonSchemas.numberProp,
-        burstCount: commonSchemas.numberProp,
-        burstTime: commonSchemas.numberProp,
-        burstInterval: commonSchemas.numberProp,
-        spawnPerUnit: commonSchemas.numberProp,
-        lifetime: commonSchemas.numberProp,
-        lifetimeMin: commonSchemas.numberProp,
-        lifetimeMax: commonSchemas.numberProp,
-        mass: commonSchemas.numberProp,
-        spriteSize: commonSchemas.objectProp,
-        meshScale: commonSchemas.objectProp,
-        forceType: commonSchemas.stringProp,
-        forceStrength: commonSchemas.numberProp,
-        forceVector: commonSchemas.objectProp,
-        dragCoefficient: commonSchemas.numberProp,
-        velocity: commonSchemas.objectProp,
-        velocityMin: commonSchemas.objectProp,
-        velocityMax: commonSchemas.objectProp,
-        acceleration: commonSchemas.objectProp,
-        velocityMode: commonSchemas.stringProp,
-        sizeMode: commonSchemas.stringProp,
-        uniformSize: commonSchemas.numberProp,
-        sizeScale: commonSchemas.objectProp,
-        sizeCurve: commonSchemas.arrayOfObjects,
-        colorMin: commonSchemas.objectProp,
-        colorMax: commonSchemas.objectProp,
-        colorMode: commonSchemas.stringProp,
-        colorCurve: commonSchemas.arrayOfObjects,
-        materialPath: commonSchemas.materialPath,
-        meshPath: commonSchemas.meshPath,
-        sortMode: commonSchemas.stringProp,
-        alignment: commonSchemas.stringProp,
-        facingMode: commonSchemas.stringProp,
-        ribbonWidth: commonSchemas.numberProp,
-        ribbonTwist: commonSchemas.numberProp,
-        ribbonFacingMode: commonSchemas.stringProp,
-        tessellationFactor: commonSchemas.numberProp,
-        lightRadius: commonSchemas.numberProp,
-        lightIntensity: commonSchemas.numberProp,
-        lightColor: commonSchemas.objectProp,
-        volumetricScattering: commonSchemas.numberProp,
-        lightExponent: commonSchemas.numberProp,
-        affectsTranslucency: commonSchemas.booleanProp,
-        collisionMode: commonSchemas.stringProp,
-        restitution: commonSchemas.numberProp,
-        friction: commonSchemas.numberProp,
-        radiusScale: commonSchemas.numberProp,
-        dieOnCollision: commonSchemas.booleanProp,
-        killCondition: commonSchemas.stringProp,
-        killBox: commonSchemas.objectProp,
-        invertKillZone: commonSchemas.booleanProp,
-        cameraOffset: commonSchemas.numberProp,
-        cameraOffsetMode: commonSchemas.stringProp,
-        parameterValue: commonSchemas.value,
-        sourceBinding: commonSchemas.stringProp,
-        skeletalMeshPath: commonSchemas.skeletalMeshPath,
-        staticMeshPath: commonSchemas.meshAssetPath,
-        useWholeSkeletonOrBones: commonSchemas.stringProp,
-        specificBones: commonSchemas.arrayOfStrings,
-        samplingMode: commonSchemas.stringProp,
-        eventName: commonSchemas.eventName,
-        eventPayload: commonSchemas.arrayOfObjects,
-        spawnOnEvent: commonSchemas.booleanProp,
-        eventSpawnCount: commonSchemas.numberProp,
-        gpuEnabled: commonSchemas.booleanProp,
-        fixedBoundsEnabled: commonSchemas.booleanProp,
-        deterministicEnabled: commonSchemas.booleanProp,
-        stageName: commonSchemas.stageName,
-        stageIterationSource: commonSchemas.stringProp
+        // World Partition / Data Layers
+        cells: commonSchemas.arrayOfStrings,
+        dataLayerName: commonSchemas.dataLayerName,
+        dataLayerLabel: commonSchemas.stringProp,
+        dataLayerState: commonSchemas.stringProp,
+        actorPath: commonSchemas.actorPath,
+        // Cell bounds
+        min: commonSchemas.location,
+        max: commonSchemas.location,
+        origin: commonSchemas.location,
+        extent: commonSchemas.extent,
+        // Level creation
+        template: commonSchemas.stringProp,
+        useWorldPartition: commonSchemas.booleanProp,
+        // Metadata & utilities
+        metadata: commonSchemas.objectProp,
+        newName: commonSchemas.stringProp,
+        timeoutMs: commonSchemas.numberProp
       },
       required: ['action']
     },
@@ -694,7 +516,8 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
             'create_procedural_terrain', 'create_procedural_foliage', 'add_foliage_instances',
             'get_foliage_instances', 'remove_foliage', 'paint_landscape', 'paint_landscape_layer',
             'modify_heightmap', 'set_landscape_material', 'create_landscape_grass_type',
-            'generate_lods', 'bake_lightmap', 'export_snapshot', 'import_snapshot', 'delete'
+            'generate_lods', 'bake_lightmap', 'export_snapshot', 'import_snapshot', 'delete',
+            'create_sky_sphere', 'set_time_of_day', 'create_fog_volume'
           ],
           description: 'Action'
         },
@@ -722,6 +545,7 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
         brushSize: commonSchemas.numberProp,
         layerName: commonSchemas.stringProp,
         eraseMode: commonSchemas.booleanProp,
+        actorName: commonSchemas.actorName,
         foliageType: commonSchemas.stringProp,
         foliageTypePath: commonSchemas.assetPath,
         meshPath: commonSchemas.meshPath,
@@ -748,9 +572,32 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
         volumeName: commonSchemas.stringProp,
         seed: commonSchemas.numberProp,
         foliageTypes: commonSchemas.arrayOfObjects,
+        // Additional handler-used params
+        quadsPerSection: commonSchemas.numberProp,
+        enableWorldPartition: commonSchemas.booleanProp,
+        runtimeGrid: commonSchemas.stringProp,
+        isSpatiallyLoaded: commonSchemas.booleanProp,
+        dataLayers: commonSchemas.arrayOfStrings,
+        count: commonSchemas.numberProp,
+        assets: commonSchemas.arrayOfStrings,
+        numLODs: commonSchemas.numberProp,
+        subdivisions: commonSchemas.numberProp,
+        settings: commonSchemas.objectProp,
+        tileSize: commonSchemas.numberProp,
+        quality: commonSchemas.stringProp,
+        staticMesh: commonSchemas.meshPath,
+        timeoutMs: commonSchemas.numberProp,
         path: commonSchemas.directoryPath,
         filename: commonSchemas.stringProp,
-        assetPaths: commonSchemas.arrayOfStrings
+        assetPaths: commonSchemas.arrayOfStrings,
+        // Additional params for C++ handler alignment (EnvironmentHandlers.cpp)
+        names: commonSchemas.arrayOfStrings,
+        time: commonSchemas.numberProp,
+        spacing: commonSchemas.numberProp,
+        heightScale: commonSchemas.numberProp,
+        material: commonSchemas.materialPath,
+        hour: commonSchemas.numberProp,
+        intensity: commonSchemas.numberProp
       },
       required: ['action']
     },
@@ -758,6 +605,111 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
       type: 'object',
       properties: {
         ...commonSchemas.outputBase
+      }
+    }
+  },
+  {
+    name: 'animation_physics',
+    category: 'gameplay',
+    description: 'Create animation blueprints, blend spaces, montages, state machines, Control Rig, IK rigs, ragdolls, and vehicle physics.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: [
+            'create_animation_blueprint', 'create_animation_bp', 'create_anim_blueprint',
+            'create_blend_space', 'create_blend_space_1d', 'create_blend_space_2d',
+            'create_blend_tree', 'create_procedural_anim',
+            'create_aim_offset', 'add_aim_offset_sample',
+            'create_state_machine', 'add_state_machine', 'add_state', 'add_transition',
+            'set_transition_rules', 'add_blend_node', 'add_cached_pose', 'add_slot_node',
+            'create_control_rig', 'add_control', 'add_rig_unit', 'connect_rig_elements',
+            'create_ik_rig', 'add_ik_chain', 'setup_ik',
+            'create_pose_library',
+            'create_animation_asset', 'create_animation_sequence',
+            'set_sequence_length', 'add_bone_track', 'set_bone_key', 'set_curve_key',
+            'create_montage', 'add_montage_section', 'add_montage_slot',
+            'set_section_timing', 'add_montage_notify', 'set_blend_in', 'set_blend_out',
+            'link_sections', 'add_notify', 'play_montage', 'play_anim_montage',
+            'setup_ragdoll', 'activate_ragdoll',
+            'configure_vehicle', 'setup_physics_simulation',
+            'create_anim_blueprint', 'add_blend_sample', 'set_axis_settings',
+            'set_interpolation_settings', 'setup_retargeting',
+            'cleanup'
+          ],
+          description: 'Action'
+        },
+        name: commonSchemas.name,
+        savePath: commonSchemas.savePath,
+        skeletonPath: commonSchemas.assetPath,
+        meshPath: commonSchemas.meshPath,
+        parentClass: commonSchemas.stringProp,
+        actorName: commonSchemas.actorName,
+        skeletonName: commonSchemas.stringProp,
+        targetSkeleton: commonSchemas.assetPath,
+        blueprintName: commonSchemas.stringProp,
+        montageName: commonSchemas.stringProp,
+        animSequence: commonSchemas.assetPath,
+        animPath: commonSchemas.assetPath,
+        animAssetPath: commonSchemas.assetPath,
+        animMontagePath: commonSchemas.assetPath,
+        slotName: commonSchemas.stringProp,
+        sectionName: commonSchemas.stringProp,
+        notifyName: commonSchemas.stringProp,
+        boneName: commonSchemas.boneName,
+        curveName: commonSchemas.stringProp,
+        stateName: commonSchemas.stringProp,
+        machineName: commonSchemas.stringProp,
+        transitionName: commonSchemas.stringProp,
+        blendSpacePath: commonSchemas.assetPath,
+        numSamples: commonSchemas.numberProp,
+        interpolationType: commonSchemas.stringProp,
+        axisName: commonSchemas.stringProp,
+        min: commonSchemas.numberProp,
+        max: commonSchemas.numberProp,
+        samples: commonSchemas.arrayOfObjects,
+        animSequencePath: commonSchemas.assetPath,
+        playRate: commonSchemas.numberProp,
+        frame: commonSchemas.numberProp,
+        time: commonSchemas.numberProp,
+        length: commonSchemas.numberProp,
+        location: commonSchemas.location,
+        rotation: commonSchemas.rotation,
+        scale: commonSchemas.scale,
+        value: commonSchemas.value,
+        enabled: commonSchemas.enabled,
+        rigPath: commonSchemas.assetPath,
+        chainName: commonSchemas.stringProp,
+        startBone: commonSchemas.boneName,
+        endBone: commonSchemas.boneName,
+        controlName: commonSchemas.stringProp,
+        unitType: commonSchemas.stringProp,
+        sourceNode: commonSchemas.stringProp,
+        targetNode: commonSchemas.stringProp,
+        sourcePin: commonSchemas.stringProp,
+        targetPin: commonSchemas.stringProp,
+        vehicleType: commonSchemas.stringProp,
+        wheelConfig: commonSchemas.objectProp,
+        engineTorque: commonSchemas.numberProp,
+        mass: commonSchemas.numberProp,
+        dragCoefficient: commonSchemas.numberProp,
+        artifacts: commonSchemas.arrayOfStrings,
+        ragdollActive: commonSchemas.booleanProp,
+        sourceSkeleton: commonSchemas.assetPath,
+        retargetSkeleton: commonSchemas.assetPath,
+        retargetProfile: commonSchemas.stringProp
+      },
+      required: ['action']
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        ...commonSchemas.outputBase,
+        assetPath: commonSchemas.assetPath,
+        animPath: commonSchemas.assetPath,
+        montagePath: commonSchemas.assetPath,
+        blendSpacePath: commonSchemas.assetPath
       }
     }
   },
@@ -882,7 +834,13 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
             'create_input_action',
             'create_input_mapping_context',
             'add_mapping',
-            'remove_mapping'
+            'remove_mapping',
+            'map_input_action',
+            'set_input_trigger',
+            'set_input_modifier',
+            'enable_input_mapping',
+            'disable_input_action',
+            'get_input_info'
           ],
           description: 'Action to perform'
         },
@@ -890,7 +848,11 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
         path: commonSchemas.directoryPath,
         contextPath: commonSchemas.assetPath,
         actionPath: commonSchemas.assetPath,
-        key: commonSchemas.stringProp
+        key: commonSchemas.stringProp,
+        triggerType: commonSchemas.stringProp,
+        modifierType: commonSchemas.stringProp,
+        assetPath: commonSchemas.assetPath,
+        priority: { type: 'number', description: 'Priority for input mapping context (default: 0).' }
       },
       required: ['action']
     },
@@ -912,9 +874,15 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
         action: {
           type: 'string',
           enum: [
-            'inspect_object', 'set_property', 'get_property', 'get_components', 'inspect_class', 'list_objects',
-            'get_component_property', 'set_component_property', 'get_metadata', 'add_tag', 'find_by_tag',
-            'create_snapshot', 'restore_snapshot', 'export', 'delete_object', 'find_by_class', 'get_bounding_box'
+            'inspect_object', 'get_actor_details', 'get_blueprint_details', 'get_mesh_details',
+            'get_texture_details', 'get_material_details', 'get_level_details', 'get_component_details',
+            'set_property', 'get_property',
+            'get_components', 'get_component_property', 'set_component_property',
+            'inspect_class', 'list_objects',
+            'get_metadata', 'add_tag', 'find_by_tag',
+            'create_snapshot', 'restore_snapshot', 'export', 'delete_object', 'find_by_class', 'get_bounding_box',
+            'get_project_settings', 'get_world_settings', 'get_viewport_info', 'get_selected_actors',
+            'get_scene_stats', 'get_performance_stats', 'get_memory_stats', 'get_editor_settings'
           ],
           description: 'Action'
         },
@@ -1107,7 +1075,8 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
         name: commonSchemas.name,
         location: commonSchemas.location,
         rotation: commonSchemas.rotation,
-        lightType: { type: 'string', enum: ['Directional', 'Point', 'Spot', 'Rect'] },
+        lightType: { type: 'string', enum: ['Directional', 'Point', 'Spot', 'Rect', 'DirectionalLight', 'PointLight', 'SpotLight', 'RectLight', 'directional', 'point', 'spot', 'rect'], description: 'Light type. Accepts short names (Point), class names (PointLight), or lowercase (point).' },
+        lightClass: { type: 'string', description: 'Unreal light class name (e.g., PointLight, SpotLight). Alternative to lightType.' },
         intensity: commonSchemas.numberProp,
         color: commonSchemas.color,
         castShadows: commonSchemas.booleanProp,
@@ -1665,6 +1634,171 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
   // [MERGED] manage_audio_authoring actions now in manage_audio (Phase 53: Strategic Tool Merging)
   // [MERGED] manage_niagara_authoring actions now in manage_effect (Phase 53: Strategic Tool Merging)
   {
+    name: 'manage_effect',
+    category: 'gameplay',
+    description: 'Niagara particle systems, VFX, debug shapes, and GPU simulations. Create systems, emitters, modules, and control particle effects.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: [
+            'particle', 'niagara', 'debug_shape', 'spawn_niagara', 'create_dynamic_light',
+            'create_niagara_system', 'create_niagara_emitter', 'create_volumetric_fog',
+            'create_particle_trail', 'create_environment_effect', 'create_impact_effect',
+            'create_niagara_ribbon', 'activate', 'activate_effect', 'deactivate', 'reset',
+            'advance_simulation', 'add_niagara_module', 'connect_niagara_pins',
+            'remove_niagara_node', 'set_niagara_parameter', 'clear_debug_shapes', 'cleanup',
+            'list_debug_shapes', 'add_emitter_to_system', 'set_emitter_properties',
+            'add_spawn_rate_module', 'add_spawn_burst_module', 'add_spawn_per_unit_module',
+            'add_initialize_particle_module', 'add_particle_state_module', 'add_force_module',
+            'add_velocity_module', 'add_acceleration_module', 'add_size_module', 'add_color_module',
+            'add_sprite_renderer_module', 'add_mesh_renderer_module', 'add_ribbon_renderer_module',
+            'add_light_renderer_module', 'add_collision_module', 'add_kill_particles_module',
+            'add_camera_offset_module', 'add_user_parameter', 'set_parameter_value',
+            'bind_parameter_to_source', 'add_skeletal_mesh_data_interface',
+            'add_static_mesh_data_interface', 'add_spline_data_interface', 'add_audio_spectrum_data_interface',
+            'add_collision_query_data_interface', 'add_event_generator', 'add_event_receiver',
+            'configure_event_payload', 'enable_gpu_simulation', 'add_simulation_stage',
+            'get_niagara_info', 'validate_niagara_system'
+          ],
+          description: 'Effect/Niagara action to perform.'
+        },
+        // Common parameters
+        name: commonSchemas.name,
+        assetPath: commonSchemas.assetPath,
+        savePath: commonSchemas.savePath,
+        template: commonSchemas.stringProp,
+        // System/Emitter parameters
+        system: commonSchemas.assetPath,
+        systemPath: commonSchemas.assetPath,
+        systemName: commonSchemas.stringProp,
+        emitter: commonSchemas.stringProp,
+        emitterName: commonSchemas.stringProp,
+        emitterTemplate: commonSchemas.assetPath,
+        // Location and transform
+        location: commonSchemas.location,
+        rotation: commonSchemas.rotation,
+        scale: commonSchemas.scale,
+        // Effect control
+        effect: commonSchemas.assetPath,
+        effectId: commonSchemas.stringProp,
+        effectHandle: commonSchemas.stringProp,
+        niagaraHandle: commonSchemas.stringProp,
+        actorName: commonSchemas.actorName,
+        reset: commonSchemas.booleanProp,
+        time: commonSchemas.numberProp,
+        // Debug shapes
+        shape: commonSchemas.stringProp,
+        shapeType: commonSchemas.stringProp,
+        radius: commonSchemas.numberProp,
+        color: { type: 'array', items: commonSchemas.numberProp },
+        duration: commonSchemas.numberProp,
+        // Dynamic light
+        lightType: commonSchemas.stringProp,
+        intensity: commonSchemas.numberProp,
+        // Particle/VFX parameters
+        preset: commonSchemas.stringProp,
+        type: commonSchemas.stringProp,
+        width: commonSchemas.numberProp,
+        density: commonSchemas.numberProp,
+        scattering: commonSchemas.numberProp,
+        // Trail and ribbon
+        attachTo: commonSchemas.stringProp,
+        ribbonPath: commonSchemas.assetPath,
+        // Impact effect
+        surfaceType: commonSchemas.stringProp,
+        impactType: commonSchemas.stringProp,
+        // Environment effect
+        effectType: commonSchemas.stringProp,
+        // Niagara parameters
+        parameterName: commonSchemas.parameterName,
+        parameterType: commonSchemas.stringProp,
+        value: commonSchemas.value,
+        // Niagara modules
+        moduleName: commonSchemas.stringProp,
+        fromNode: commonSchemas.stringProp,
+        toNode: commonSchemas.stringProp,
+        fromPin: commonSchemas.sourcePin,
+        toPin: commonSchemas.targetPin,
+        outputPin: commonSchemas.sourcePin,
+        inputPin: commonSchemas.targetPin,
+        node: commonSchemas.stringProp,
+        // Emitter properties
+        loopBehavior: commonSchemas.stringProp,
+        spawnRate: commonSchemas.numberProp,
+        count: commonSchemas.numberProp,
+        loopCount: commonSchemas.numberProp,
+        unitsPerSpawn: commonSchemas.numberProp,
+        // Particle attributes
+        attributes: commonSchemas.objectProp,
+        updateScript: commonSchemas.stringProp,
+        // Force/velocity/acceleration
+        forceType: commonSchemas.stringProp,
+        strength: commonSchemas.numberProp,
+        velocityMode: commonSchemas.stringProp,
+        speedMin: commonSchemas.numberProp,
+        speedMax: commonSchemas.numberProp,
+        acceleration: commonSchemas.location,
+        // Size
+        sizeMode: commonSchemas.stringProp,
+        sizeMin: commonSchemas.location,
+        sizeMax: commonSchemas.location,
+        // Color
+        colorMode: commonSchemas.stringProp,
+        gradientStart: { type: 'array', items: commonSchemas.numberProp },
+        gradientEnd: { type: 'array', items: commonSchemas.numberProp },
+        // Renderers
+        material: commonSchemas.materialPath,
+        mesh: commonSchemas.meshPath,
+        lightIntensity: commonSchemas.numberProp,
+        lightRadius: commonSchemas.numberProp,
+        // Collision
+        collisionMode: commonSchemas.stringProp,
+        collisionRadius: commonSchemas.numberProp,
+        // Kill particles
+        killCondition: commonSchemas.stringProp,
+        // Camera offset
+        offsetMode: commonSchemas.stringProp,
+        offsetAmount: commonSchemas.numberProp,
+        // User parameters
+        paramName: commonSchemas.stringProp,
+        paramType: commonSchemas.stringProp,
+        sourceActor: commonSchemas.stringProp,
+        // Data interfaces
+        skeletalMesh: commonSchemas.meshPath,
+        staticMesh: commonSchemas.meshPath,
+        splineComponent: commonSchemas.stringProp,
+        audioComponent: commonSchemas.stringProp,
+        queryChannel: commonSchemas.stringProp,
+        // Events
+        eventName: commonSchemas.eventName,
+        condition: commonSchemas.stringProp,
+        receiverScript: commonSchemas.stringProp,
+        payload: commonSchemas.objectProp,
+        // GPU simulation
+        enabled: commonSchemas.booleanProp,
+        // Simulation stage
+        stageName: commonSchemas.stringProp,
+        stageType: commonSchemas.stringProp,
+        // Timeout
+        timeoutMs: commonSchemas.numberProp
+      },
+      required: ['action']
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        ...commonSchemas.outputBase,
+        systemPath: commonSchemas.assetPath,
+        emitterName: commonSchemas.stringProp,
+        shapes: commonSchemas.arrayOfObjects,
+        niagaraInfo: commonSchemas.objectProp,
+        validationResult: commonSchemas.objectProp
+      }
+    }
+  },
+  {
     name: 'manage_gas',
     category: 'gameplay',
     description: 'Create Gameplay Abilities, Effects, Attribute Sets, and Gameplay Cues for ability systems.',
@@ -1932,7 +2066,9 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
             'setup_footstep_system',
             'map_surface_to_sound',
             'configure_footstep_fx',
-            'get_character_info'
+            'get_character_info',
+            'setup_movement', 'set_walk_speed', 'set_jump_height', 'set_gravity_scale',
+            'set_ground_friction', 'set_braking_deceleration', 'configure_crouch', 'configure_sprint'
           ],
           description: 'Character action to perform.'
         },
@@ -2086,7 +2222,9 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
             'setup_reload_system', 'setup_ammo_system', 'setup_attachment_system', 'setup_weapon_switching',
             'configure_muzzle_flash', 'configure_tracer', 'configure_impact_effects', 'configure_shell_ejection',
             'create_melee_trace', 'configure_combo_system', 'create_hit_pause', 'configure_hit_reaction', 'setup_parry_block_system', 'configure_weapon_trails',
-            'get_combat_info'
+            'get_combat_info',
+            'setup_damage_type', 'configure_hit_detection', 'get_combat_stats',
+            'create_damage_effect', 'apply_damage', 'heal', 'create_shield', 'modify_armor'
           ],
           description: 'Combat action to perform'
         },
@@ -2264,7 +2402,11 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
             'create_state_tree', 'add_state_tree_state', 'add_state_tree_transition', 'configure_state_tree_task',
             'create_smart_object_definition', 'add_smart_object_slot', 'configure_slot_behavior', 'add_smart_object_component',
             'create_mass_entity_config', 'configure_mass_entity', 'add_mass_spawner',
-            'get_ai_info'
+            'get_ai_info',
+            'create_blackboard', 'setup_perception',
+            'create_nav_link_proxy', 'set_focus', 'clear_focus',
+            'set_blackboard_value', 'get_blackboard_value',
+            'run_behavior_tree', 'stop_behavior_tree'
           ],
           description: 'AI action to perform'
         },
@@ -3533,7 +3675,13 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
           enum: ['RoundWholeNumber', 'RoundOneDecimal', 'RoundTwoDecimals'],
           description: 'Location quantization level.'
         },
-        save: commonSchemas.save
+        // Additional params for C++ handler alignment (NetworkingHandlers.cpp)
+        spatiallyLoaded: { type: 'boolean', description: 'Spatially loaded for replication graph.' },
+        netLoadOnClient: { type: 'boolean', description: 'Net load on client for replication graph.' },
+        replicationPolicy: { type: 'string', description: 'Replication policy for replication graph.' },
+        customSerialization: { type: 'boolean', description: 'Use custom serialization.' },
+        predictionThreshold: { type: 'number', description: 'Prediction threshold for client prediction.' },
+        removeAll: { type: 'boolean', description: 'Remove all foliage instances.' }
       },
       required: ['action']
     },
@@ -3848,6 +3996,7 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
         parentLevel: commonSchemas.parentLevel,
         templateLevel: commonSchemas.templateLevel,
         bCreateWorldPartition: { type: 'boolean', description: 'Create with World Partition enabled.' },
+        bUseExternalActors: { type: 'boolean', description: 'Enable One File Per Actor (OFPA/External Actors) for Data Layer compatibility. Automatically enabled when bCreateWorldPartition is true.' },
         sublevelName: commonSchemas.sublevelName,
         sublevelPath: commonSchemas.levelPath,
         streamingMethod: {
@@ -4008,18 +4157,33 @@ export const consolidatedToolDefinitions: ToolDefinition[] = [
         action: {
           type: 'string',
           enum: [
-            'create_trigger_volume', 'create_trigger_box', 'create_trigger_sphere', 'create_trigger_capsule',
-            'create_blocking_volume', 'create_kill_z_volume', 'create_pain_causing_volume', 'create_physics_volume',
+            // Trigger Volumes
+            'create_trigger_volume', 'add_trigger_volume',
+            'create_trigger_box', 'create_trigger_sphere', 'create_trigger_capsule',
+            // Gameplay Volumes
+            'create_blocking_volume', 'add_blocking_volume',
+            'create_kill_z_volume', 'add_kill_z_volume',
+            'create_pain_causing_volume', 'create_physics_volume', 'add_physics_volume',
             'create_audio_volume', 'create_reverb_volume',
-            'create_cull_distance_volume', 'create_precomputed_visibility_volume', 'create_lightmass_importance_volume',
+            // Rendering Volumes
+            'create_cull_distance_volume', 'add_cull_distance_volume',
+            'create_precomputed_visibility_volume', 'create_lightmass_importance_volume',
+            // Navigation Volumes
             'create_nav_mesh_bounds_volume', 'create_nav_modifier_volume', 'create_camera_blocking_volume',
-            'set_volume_extent', 'set_volume_properties',
+            // Post Process Volume (UE 5.1-5.6 only)
+            'create_post_process_volume', 'add_post_process_volume',
+            // Volume Configuration
+            'set_volume_extent', 'set_volume_bounds', 'set_volume_properties',
+            // Volume Removal
+            'remove_volume',
+            // Utility
             'get_volumes_info'
           ],
           description: 'Volume action to perform'
         },
         volumeName: commonSchemas.volumeName,
         volumePath: commonSchemas.volumePath,
+        actorPath: commonSchemas.actorPath, // For add_*_volume actions that attach to existing actors
         location: {
           type: 'object',
           properties: {

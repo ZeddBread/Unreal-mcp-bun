@@ -6,6 +6,7 @@
 
 import { ITools } from '../../types/tool-interfaces.js';
 import type { HandlerArgs } from '../../types/handler-types.js';
+import type { AutomationResponse } from '../../types/automation-responses.js';
 import { executeAutomationRequest } from './common-handlers.js';
 import {
   normalizeArgs,
@@ -13,79 +14,90 @@ import {
   extractOptionalString,
   extractOptionalNumber,
   extractOptionalBoolean,
+  extractOptionalArray,
+  extractOptionalObject,
 } from './argument-helper.js';
 import { ResponseFactory } from '../../utils/response-factory.js';
+import { TOOL_ACTIONS } from '../../utils/action-constants.js';
 
-/** Helper to extract optional array from params */
-function extractOptionalArray(params: Record<string, unknown>, key: string): unknown[] | undefined {
-  const val = params[key];
-  if (val === undefined || val === null) return undefined;
-  if (Array.isArray(val)) return val;
-  return undefined;
-}
 
-/** Helper to extract optional object from params */
-function extractOptionalObject(params: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
-  const val = params[key];
-  if (val === undefined || val === null) return undefined;
-  if (typeof val === 'object' && !Array.isArray(val)) return val as Record<string, unknown>;
-  return undefined;
-}
+/**
+ * Action aliases for test compatibility
+ * Maps test action names to canonical handler action names
+ */
+const TEXTURE_ACTION_ALIASES: Record<string, string> = {
+  'create_texture': 'create_noise_texture',
+  'import_texture': 'import_texture',
+  'set_texture_compression': 'set_compression_settings',
+  'set_texture_filter': 'set_filter',
+  'set_texture_wrap': 'set_wrap',
+  'set_texture_size': 'resize_texture',
+  'create_render_target': 'create_render_target',
+  'create_cube_texture': 'create_cube_texture',
+  'create_volume_texture': 'create_volume_texture',
+  'create_texture_array': 'create_texture_array',
+};
 
-/** Texture response */
-interface TextureResponse {
-  success?: boolean;
-  message?: string;
-  error?: string;
-  errorCode?: string;
-  result?: Record<string, unknown>;
-  assetPath?: string;
-  [key: string]: unknown;
+/**
+ * Normalize texture action names for compatibility
+ */
+function normalizeTextureAction(action: string): string {
+  return TEXTURE_ACTION_ALIASES[action] ?? action;
 }
 
 /**
  * Handle texture generation and processing actions
  */
+
+
 export async function handleTextureTools(
   action: string,
   args: HandlerArgs,
   tools: ITools
 ): Promise<Record<string, unknown>> {
+  // Normalize action name for test compatibility
+  const normalizedAction = normalizeTextureAction(action);
+  
   try {
-    switch (action) {
+    switch (normalizedAction) {
       // ===== 9.1 Procedural Generation =====
-      case 'create_noise_texture': {
-        const params = normalizeArgs(args, [
-          { key: 'name', required: true },
-          { key: 'path', aliases: ['directory'], default: '/Game/Textures' },
-          { key: 'noiseType', default: 'Perlin' }, // Perlin, Simplex, Worley, Voronoi
-          { key: 'width', default: 1024 },
-          { key: 'height', default: 1024 },
-          { key: 'scale', default: 1.0 },
-          { key: 'octaves', default: 4 },
-          { key: 'persistence', default: 0.5 },
-          { key: 'lacunarity', default: 2.0 },
-          { key: 'seed', default: 0 },
-          { key: 'seamless', default: false },
-          { key: 'hdr', default: false },
-          { key: 'save', default: true },
-        ]);
+      case 'create_noise_texture':
+      case 'create_texture': {
+        // Support texturePath as alternative to name+path
+        let name: string;
+        let path: string;
+        const texturePath = extractOptionalString(args, 'texturePath');
+        if (texturePath) {
+          const lastSlash = texturePath.lastIndexOf('/');
+          if (lastSlash >= 0) {
+            name = texturePath.substring(lastSlash + 1);
+            path = texturePath.substring(0, lastSlash);
+          } else {
+            name = texturePath;
+            path = '/Game/Textures';
+          }
+        } else {
+          const params = normalizeArgs(args, [
+            { key: 'name', required: true },
+            { key: 'path', aliases: ['directory'], default: '/Game/Textures' },
+          ]);
+          name = extractString(params, 'name');
+          path = extractOptionalString(params, 'path') ?? '/Game/Textures';
+        }
 
-        const name = extractString(params, 'name');
-        const path = extractOptionalString(params, 'path') ?? '/Game/Textures';
-        const noiseType = extractOptionalString(params, 'noiseType') ?? 'Perlin';
-        const width = extractOptionalNumber(params, 'width') ?? 1024;
-        const height = extractOptionalNumber(params, 'height') ?? 1024;
-        const scale = extractOptionalNumber(params, 'scale') ?? 1.0;
-        const octaves = extractOptionalNumber(params, 'octaves') ?? 4;
-        const persistence = extractOptionalNumber(params, 'persistence') ?? 0.5;
-        const lacunarity = extractOptionalNumber(params, 'lacunarity') ?? 2.0;
-        const seed = extractOptionalNumber(params, 'seed') ?? 0;
-        const seamless = extractOptionalBoolean(params, 'seamless') ?? false;
-        const hdr = extractOptionalBoolean(params, 'hdr') ?? false;
-        const save = extractOptionalBoolean(params, 'save') ?? true;
+        const noiseType = extractOptionalString(args, 'noiseType') ?? 'Perlin';
+        const width = extractOptionalNumber(args, 'width') ?? 1024;
+        const height = extractOptionalNumber(args, 'height') ?? 1024;
+        const scale = extractOptionalNumber(args, 'scale') ?? 1.0;
+        const octaves = extractOptionalNumber(args, 'octaves') ?? 4;
+        const persistence = extractOptionalNumber(args, 'persistence') ?? 0.5;
+        const lacunarity = extractOptionalNumber(args, 'lacunarity') ?? 2.0;
+        const seed = extractOptionalNumber(args, 'seed') ?? 0;
+        const seamless = extractOptionalBoolean(args, 'seamless') ?? false;
+        const hdr = extractOptionalBoolean(args, 'hdr') ?? false;
+        const save = extractOptionalBoolean(args, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'create_noise_texture',
           name,
           path,
@@ -100,7 +112,7 @@ export async function handleTextureTools(
           seamless,
           hdr,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to create noise texture', res.errorCode);
@@ -141,7 +153,7 @@ export async function handleTextureTools(
         const hdr = extractOptionalBoolean(params, 'hdr') ?? false;
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'create_gradient_texture',
           name,
           path,
@@ -157,7 +169,7 @@ export async function handleTextureTools(
           colorStops,
           hdr,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to create gradient texture', res.errorCode);
@@ -196,7 +208,7 @@ export async function handleTextureTools(
         const offset = extractOptionalNumber(params, 'offset') ?? 0.5;
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'create_pattern_texture',
           name,
           path,
@@ -211,7 +223,7 @@ export async function handleTextureTools(
           brickRatio,
           offset,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to create pattern texture', res.errorCode);
@@ -238,7 +250,7 @@ export async function handleTextureTools(
         const flipY = extractOptionalBoolean(params, 'flipY') ?? false;
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'create_normal_from_height',
           sourceTexture,
           name,
@@ -247,7 +259,7 @@ export async function handleTextureTools(
           algorithm,
           flipY,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to create normal map from height', res.errorCode);
@@ -262,7 +274,7 @@ export async function handleTextureTools(
           { key: 'path', aliases: ['directory'], default: '/Game/Textures' },
           { key: 'width', default: 1024 },
           { key: 'height', default: 1024 },
-          { key: 'samples', default: 64 },
+          { key: 'samples', aliases: ['sampleCount'], default: 64 },
           { key: 'rayDistance', default: 100.0 },
           { key: 'bias', default: 0.01 },
           { key: 'uvChannel', default: 0 },
@@ -280,19 +292,19 @@ export async function handleTextureTools(
         const uvChannel = extractOptionalNumber(params, 'uvChannel') ?? 0;
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'create_ao_from_mesh',
           meshPath,
           name,
           path,
           width,
           height,
-          samples,
+          sampleCount: samples,
           rayDistance,
           bias,
           uvChannel,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to create AO from mesh', res.errorCode);
@@ -303,33 +315,31 @@ export async function handleTextureTools(
       // ===== 9.2 Texture Processing =====
       case 'resize_texture': {
         const params = normalizeArgs(args, [
-          { key: 'assetPath', aliases: ['texturePath'], required: true },
+          { key: 'sourcePath', aliases: ['assetPath', 'texturePath'], required: true },
+          { key: 'name' }, // Optional output name
+          { key: 'path' }, // Optional output path
           { key: 'newWidth', required: true },
           { key: 'newHeight', required: true },
-          { key: 'filterMethod', default: 'Bilinear' }, // Nearest, Bilinear, Bicubic, Lanczos
-          { key: 'preserveAspect', default: false },
-          { key: 'outputPath' }, // Optional - defaults to overwriting source
+          { key: 'filterMethod', default: 'Bilinear' },
           { key: 'save', default: true },
         ]);
 
-        const assetPath = extractString(params, 'assetPath');
-        const newWidth = extractOptionalNumber(params, 'newWidth') ?? 1024;
-        const newHeight = extractOptionalNumber(params, 'newHeight') ?? 1024;
-        const filterMethod = extractOptionalString(params, 'filterMethod') ?? 'Bilinear';
-        const preserveAspect = extractOptionalBoolean(params, 'preserveAspect') ?? false;
-        const outputPath = extractOptionalString(params, 'outputPath');
+        const sourcePath = extractString(params, 'sourcePath');
+        const name = extractOptionalString(params, 'name');
+        const path = extractOptionalString(params, 'path');
+        const newWidth = extractOptionalNumber(params, 'newWidth') ?? 512;
+        const newHeight = extractOptionalNumber(params, 'newHeight') ?? 512;
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'resize_texture',
-          assetPath,
+          sourcePath,
+          name,
+          path,
           newWidth,
           newHeight,
-          filterMethod,
-          preserveAspect,
-          outputPath,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to resize texture', res.errorCode);
@@ -340,38 +350,35 @@ export async function handleTextureTools(
       case 'adjust_levels': {
         const params = normalizeArgs(args, [
           { key: 'assetPath', aliases: ['texturePath'], required: true },
-          { key: 'inputBlackPoint', default: 0.0 },
-          { key: 'inputWhitePoint', default: 1.0 },
+          { key: 'inBlack', aliases: ['inputBlackPoint'], default: 0.0 },
+          { key: 'inWhite', aliases: ['inputWhitePoint'], default: 1.0 },
           { key: 'gamma', default: 1.0 },
-          { key: 'outputBlackPoint', default: 0.0 },
-          { key: 'outputWhitePoint', default: 1.0 },
-          { key: 'channel', default: 'All' }, // All, Red, Green, Blue, Alpha
-          { key: 'outputPath' },
+          { key: 'outBlack', aliases: ['outputBlackPoint'], default: 0.0 },
+          { key: 'outWhite', aliases: ['outputWhitePoint'], default: 1.0 },
+          { key: 'inPlace', default: true },
           { key: 'save', default: true },
         ]);
 
         const assetPath = extractString(params, 'assetPath');
-        const inputBlackPoint = extractOptionalNumber(params, 'inputBlackPoint') ?? 0.0;
-        const inputWhitePoint = extractOptionalNumber(params, 'inputWhitePoint') ?? 1.0;
+        const inBlack = extractOptionalNumber(params, 'inBlack') ?? 0.0;
+        const inWhite = extractOptionalNumber(params, 'inWhite') ?? 1.0;
         const gamma = extractOptionalNumber(params, 'gamma') ?? 1.0;
-        const outputBlackPoint = extractOptionalNumber(params, 'outputBlackPoint') ?? 0.0;
-        const outputWhitePoint = extractOptionalNumber(params, 'outputWhitePoint') ?? 1.0;
-        const channel = extractOptionalString(params, 'channel') ?? 'All';
-        const outputPath = extractOptionalString(params, 'outputPath');
+        const outBlack = extractOptionalNumber(params, 'outBlack') ?? 0.0;
+        const outWhite = extractOptionalNumber(params, 'outWhite') ?? 1.0;
+        const inPlace = extractOptionalBoolean(params, 'inPlace') ?? true;
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'adjust_levels',
           assetPath,
-          inputBlackPoint,
-          inputWhitePoint,
+          inBlack,
+          inWhite,
           gamma,
-          outputBlackPoint,
-          outputWhitePoint,
-          channel,
-          outputPath,
+          outBlack,
+          outWhite,
+          inPlace,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to adjust levels', res.errorCode);
@@ -382,7 +389,7 @@ export async function handleTextureTools(
       case 'adjust_curves': {
         const params = normalizeArgs(args, [
           { key: 'assetPath', aliases: ['texturePath'], required: true },
-          { key: 'curvePoints', required: true }, // Array of {x, y} points defining the curve
+          { key: 'curvePoints' }, // Optional: Array of {x, y} points - C++ has defaults for linear curve
           { key: 'channel', default: 'All' }, // All, Red, Green, Blue, Alpha
           { key: 'outputPath' },
           { key: 'save', default: true },
@@ -394,14 +401,14 @@ export async function handleTextureTools(
         const outputPath = extractOptionalString(params, 'outputPath');
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'adjust_curves',
           assetPath,
           curvePoints,
           channel,
           outputPath,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to adjust curves', res.errorCode);
@@ -424,14 +431,14 @@ export async function handleTextureTools(
         const outputPath = extractOptionalString(params, 'outputPath');
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'blur',
           assetPath,
           radius,
           blurType,
           outputPath,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to blur texture', res.errorCode);
@@ -442,29 +449,20 @@ export async function handleTextureTools(
       case 'sharpen': {
         const params = normalizeArgs(args, [
           { key: 'assetPath', aliases: ['texturePath'], required: true },
-          { key: 'strength', default: 1.0 },
-          { key: 'radius', default: 1.0 },
-          { key: 'sharpenType', default: 'UnsharpMask' }, // UnsharpMask, Laplacian
-          { key: 'outputPath' },
+          { key: 'amount', aliases: ['strength'], default: 1.0 },
           { key: 'save', default: true },
         ]);
 
         const assetPath = extractString(params, 'assetPath');
-        const strength = extractOptionalNumber(params, 'strength') ?? 1.0;
-        const radius = extractOptionalNumber(params, 'radius') ?? 1.0;
-        const sharpenType = extractOptionalString(params, 'sharpenType') ?? 'UnsharpMask';
-        const outputPath = extractOptionalString(params, 'outputPath');
+        const amount = extractOptionalNumber(params, 'amount') ?? 1.0;
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'sharpen',
           assetPath,
-          strength,
-          radius,
-          sharpenType,
-          outputPath,
+          amount,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to sharpen texture', res.errorCode);
@@ -487,14 +485,14 @@ export async function handleTextureTools(
         const outputPath = extractOptionalString(params, 'outputPath');
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'invert',
           assetPath,
           invertAlpha,
           channel,
           outputPath,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to invert texture', res.errorCode);
@@ -517,14 +515,14 @@ export async function handleTextureTools(
         const outputPath = extractOptionalString(params, 'outputPath');
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'desaturate',
           assetPath,
           amount,
           method,
           outputPath,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to desaturate texture', res.errorCode);
@@ -536,10 +534,10 @@ export async function handleTextureTools(
         const params = normalizeArgs(args, [
           { key: 'name', required: true },
           { key: 'path', aliases: ['directory'], default: '/Game/Textures' },
-          { key: 'redChannel' }, // Asset path or null for black
-          { key: 'greenChannel' },
-          { key: 'blueChannel' },
-          { key: 'alphaChannel' },
+          { key: 'redTexture', aliases: ['redChannel'] }, // Asset path or null for black
+          { key: 'greenTexture', aliases: ['greenChannel'] },
+          { key: 'blueTexture', aliases: ['blueChannel'] },
+          { key: 'alphaTexture', aliases: ['alphaChannel'] },
           { key: 'redSourceChannel', default: 'Red' }, // Which channel to extract from source
           { key: 'greenSourceChannel', default: 'Green' },
           { key: 'blueSourceChannel', default: 'Blue' },
@@ -551,10 +549,10 @@ export async function handleTextureTools(
 
         const name = extractString(params, 'name');
         const path = extractOptionalString(params, 'path') ?? '/Game/Textures';
-        const redChannel = extractOptionalString(params, 'redChannel');
-        const greenChannel = extractOptionalString(params, 'greenChannel');
-        const blueChannel = extractOptionalString(params, 'blueChannel');
-        const alphaChannel = extractOptionalString(params, 'alphaChannel');
+        const redTexture = extractOptionalString(params, 'redTexture');
+        const greenTexture = extractOptionalString(params, 'greenTexture');
+        const blueTexture = extractOptionalString(params, 'blueTexture');
+        const alphaTexture = extractOptionalString(params, 'alphaTexture');
         const redSourceChannel = extractOptionalString(params, 'redSourceChannel') ?? 'Red';
         const greenSourceChannel = extractOptionalString(params, 'greenSourceChannel') ?? 'Green';
         const blueSourceChannel = extractOptionalString(params, 'blueSourceChannel') ?? 'Blue';
@@ -563,14 +561,14 @@ export async function handleTextureTools(
         const height = extractOptionalNumber(params, 'height');
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'channel_pack',
           name,
           path,
-          redChannel,
-          greenChannel,
-          blueChannel,
-          alphaChannel,
+          redTexture,
+          greenTexture,
+          blueTexture,
+          alphaTexture,
           redSourceChannel,
           greenSourceChannel,
           blueSourceChannel,
@@ -578,7 +576,7 @@ export async function handleTextureTools(
           width,
           height,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to pack channels', res.errorCode);
@@ -588,30 +586,27 @@ export async function handleTextureTools(
 
       case 'channel_extract': {
         const params = normalizeArgs(args, [
-          { key: 'assetPath', aliases: ['texturePath'], required: true },
-          { key: 'channel', required: true }, // Red, Green, Blue, Alpha
-          { key: 'name' }, // Optional - defaults to source_R/G/B/A
-          { key: 'path', aliases: ['directory'] },
-          { key: 'outputAsGrayscale', default: true },
+          { key: 'texturePath', aliases: ['assetPath'], required: true },
+          { key: 'channel', required: true },
+          { key: 'outputPath' },
+          { key: 'name' },
           { key: 'save', default: true },
         ]);
 
-        const assetPath = extractString(params, 'assetPath');
+        const texturePath = extractString(params, 'texturePath');
         const channel = extractString(params, 'channel');
+        const outputPath = extractOptionalString(params, 'outputPath');
         const name = extractOptionalString(params, 'name');
-        const path = extractOptionalString(params, 'path');
-        const outputAsGrayscale = extractOptionalBoolean(params, 'outputAsGrayscale') ?? true;
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'channel_extract',
-          assetPath,
+          texturePath,
           channel,
+          outputPath,
           name,
-          path,
-          outputAsGrayscale,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to extract channel', res.errorCode);
@@ -624,7 +619,7 @@ export async function handleTextureTools(
           { key: 'name', required: true },
           { key: 'path', aliases: ['directory'], default: '/Game/Textures' },
           { key: 'baseTexture', required: true },
-          { key: 'blendTexture', required: true },
+          { key: 'blendTexture', aliases: ['overlayTexture'], required: true },
           { key: 'blendMode', default: 'Multiply' }, // Multiply, Add, Subtract, Screen, Overlay, SoftLight, HardLight, Difference, Normal
           { key: 'opacity', default: 1.0 },
           { key: 'maskTexture' }, // Optional mask for blending
@@ -640,7 +635,7 @@ export async function handleTextureTools(
         const maskTexture = extractOptionalString(params, 'maskTexture');
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'combine_textures',
           name,
           path,
@@ -650,7 +645,7 @@ export async function handleTextureTools(
           opacity,
           maskTexture,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to combine textures', res.errorCode);
@@ -670,12 +665,12 @@ export async function handleTextureTools(
         const compressionSettings = extractString(params, 'compressionSettings');
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'set_compression_settings',
           assetPath,
           compressionSettings,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to set compression settings', res.errorCode);
@@ -694,12 +689,12 @@ export async function handleTextureTools(
         const textureGroup = extractString(params, 'textureGroup');
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'set_texture_group',
           assetPath,
           textureGroup,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to set texture group', res.errorCode);
@@ -718,12 +713,12 @@ export async function handleTextureTools(
         const lodBias = extractOptionalNumber(params, 'lodBias') ?? 0;
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'set_lod_bias',
           assetPath,
           lodBias,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to set LOD bias', res.errorCode);
@@ -746,14 +741,14 @@ export async function handleTextureTools(
         const tileBorderSize = extractOptionalNumber(params, 'tileBorderSize') ?? 4;
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'configure_virtual_texture',
           assetPath,
           virtualTextureStreaming,
           tileSize,
           tileBorderSize,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to configure virtual texture', res.errorCode);
@@ -774,13 +769,13 @@ export async function handleTextureTools(
         const streamingPriority = extractOptionalNumber(params, 'streamingPriority') ?? 0;
         const save = extractOptionalBoolean(params, 'save') ?? true;
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'set_streaming_priority',
           assetPath,
           neverStream,
           streamingPriority,
           save,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to set streaming priority', res.errorCode);
@@ -796,15 +791,207 @@ export async function handleTextureTools(
 
         const assetPath = extractString(params, 'assetPath');
 
-        const res = (await executeAutomationRequest(tools, 'manage_texture', {
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
           subAction: 'get_texture_info',
           assetPath,
-        })) as TextureResponse;
+        })) as AutomationResponse;
 
         if (res.success === false) {
           return ResponseFactory.error(res.error ?? 'Failed to get texture info', res.errorCode);
         }
         return ResponseFactory.success(res, res.message ?? 'Texture info retrieved');
+      }
+
+      // ===== Additional Actions for Test Compatibility =====
+      case 'import_texture': {
+        const params = normalizeArgs(args, [
+          { key: 'sourcePath', required: true },
+          { key: 'destinationPath', aliases: ['texturePath', 'path'], required: true },
+        ]);
+
+        const sourcePath = extractString(params, 'sourcePath');
+        const destinationPath = extractString(params, 'destinationPath');
+
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
+          subAction: 'import_texture',
+          sourcePath,
+          destinationPath,
+        })) as AutomationResponse;
+
+        if (res.success === false) {
+          return ResponseFactory.error(res.error ?? 'Failed to import texture', res.errorCode);
+        }
+        return ResponseFactory.success(res, res.message ?? `Texture imported to '${destinationPath}'`);
+      }
+
+      case 'set_filter': 
+      case 'set_texture_filter': {
+        const params = normalizeArgs(args, [
+          { key: 'assetPath', aliases: ['texturePath'], required: true },
+          { key: 'filter', required: true },
+        ]);
+
+        const assetPath = extractString(params, 'assetPath');
+        const filter = extractString(params, 'filter');
+
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
+          subAction: 'set_texture_filter',
+          assetPath,
+          filter,
+        })) as AutomationResponse;
+
+        if (res.success === false) {
+          return ResponseFactory.error(res.error ?? 'Failed to set texture filter', res.errorCode);
+        }
+        return ResponseFactory.success(res, res.message ?? `Texture filter set to '${filter}'`);
+      }
+
+      case 'set_wrap':
+      case 'set_texture_wrap': {
+        const params = normalizeArgs(args, [
+          { key: 'assetPath', aliases: ['texturePath'], required: true },
+          { key: 'wrapMode', aliases: ['wrap'], required: true },
+        ]);
+
+        const assetPath = extractString(params, 'assetPath');
+        const wrapMode = extractString(params, 'wrapMode');
+
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
+          subAction: 'set_texture_wrap',
+          assetPath,
+          wrapMode,
+        })) as AutomationResponse;
+
+        if (res.success === false) {
+          return ResponseFactory.error(res.error ?? 'Failed to set texture wrap mode', res.errorCode);
+        }
+        return ResponseFactory.success(res, res.message ?? `Texture wrap mode set to '${wrapMode}'`);
+      }
+
+      case 'create_render_target': {
+        // Support renderTargetPath as alternative to name+path
+        let name: string;
+        let path: string;
+        const renderTargetPath = extractOptionalString(args, 'renderTargetPath');
+        if (renderTargetPath) {
+          const lastSlash = renderTargetPath.lastIndexOf('/');
+          if (lastSlash >= 0) {
+            name = renderTargetPath.substring(lastSlash + 1);
+            path = renderTargetPath.substring(0, lastSlash);
+          } else {
+            name = renderTargetPath;
+            path = '/Game/Textures';
+          }
+        } else {
+          const params = normalizeArgs(args, [
+            { key: 'name', required: true },
+            { key: 'path', aliases: ['texturePath', 'directory'], default: '/Game/Textures' },
+          ]);
+          name = extractString(params, 'name');
+          path = extractOptionalString(params, 'path') ?? '/Game/Textures';
+        }
+
+        const width = extractOptionalNumber(args, 'width') ?? 1024;
+        const height = extractOptionalNumber(args, 'height') ?? 1024;
+        const format = extractOptionalString(args, 'format') ?? 'RGBA8';
+
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
+          subAction: 'create_render_target',
+          name,
+          path,
+          width,
+          height,
+          format,
+        })) as AutomationResponse;
+
+        if (res.success === false) {
+          return ResponseFactory.error(res.error ?? 'Failed to create render target', res.errorCode);
+        }
+        return ResponseFactory.success(res, res.message ?? `Render target '${name}' created`);
+      }
+
+      case 'create_cube_texture': {
+        const params = normalizeArgs(args, [
+          { key: 'name', required: true },
+          { key: 'path', aliases: ['texturePath', 'directory'], default: '/Game/Textures' },
+          { key: 'size', default: 512 },
+        ]);
+
+        const name = extractString(params, 'name');
+        const path = extractOptionalString(params, 'path') ?? '/Game/Textures';
+        const size = extractOptionalNumber(params, 'size') ?? 512;
+
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
+          subAction: 'create_cube_texture',
+          name,
+          path,
+          size,
+        })) as AutomationResponse;
+
+        if (res.success === false) {
+          return ResponseFactory.error(res.error ?? 'Failed to create cube texture', res.errorCode);
+        }
+        return ResponseFactory.success(res, res.message ?? `Cube texture '${name}' created`);
+      }
+
+      case 'create_volume_texture': {
+        const params = normalizeArgs(args, [
+          { key: 'name', required: true },
+          { key: 'path', aliases: ['texturePath', 'directory'], default: '/Game/Textures' },
+          { key: 'width', default: 256 },
+          { key: 'height', default: 256 },
+          { key: 'depth', default: 256 },
+        ]);
+
+        const name = extractString(params, 'name');
+        const path = extractOptionalString(params, 'path') ?? '/Game/Textures';
+        const width = extractOptionalNumber(params, 'width') ?? 256;
+        const height = extractOptionalNumber(params, 'height') ?? 256;
+        const depth = extractOptionalNumber(params, 'depth') ?? 256;
+
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
+          subAction: 'create_volume_texture',
+          name,
+          path,
+          width,
+          height,
+          depth,
+        })) as AutomationResponse;
+
+        if (res.success === false) {
+          return ResponseFactory.error(res.error ?? 'Failed to create volume texture', res.errorCode);
+        }
+        return ResponseFactory.success(res, res.message ?? `Volume texture '${name}' created`);
+      }
+
+      case 'create_texture_array': {
+        const params = normalizeArgs(args, [
+          { key: 'name', required: true },
+          { key: 'path', aliases: ['texturePath', 'directory'], default: '/Game/Textures' },
+          { key: 'width', default: 512 },
+          { key: 'height', default: 512 },
+          { key: 'numSlices', default: 4 },
+        ]);
+
+        const name = extractString(params, 'name');
+        const path = extractOptionalString(params, 'path') ?? '/Game/Textures';
+        const width = extractOptionalNumber(params, 'width') ?? 512;
+        const height = extractOptionalNumber(params, 'height') ?? 512;
+        const numSlices = extractOptionalNumber(params, 'numSlices') ?? 4;
+
+        const res = (await executeAutomationRequest(tools, TOOL_ACTIONS.MANAGE_TEXTURE, {
+          subAction: 'create_texture_array',
+          name,
+          path,
+          width,
+          height,
+          numSlices,
+        })) as AutomationResponse;
+
+        if (res.success === false) {
+          return ResponseFactory.error(res.error ?? 'Failed to create texture array', res.errorCode);
+        }
+        return ResponseFactory.success(res, res.message ?? `Texture array '${name}' created`);
       }
 
       default:

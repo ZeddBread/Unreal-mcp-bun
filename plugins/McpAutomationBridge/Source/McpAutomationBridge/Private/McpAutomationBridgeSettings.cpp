@@ -21,6 +21,15 @@ UMcpAutomationBridgeSettings::UMcpAutomationBridgeSettings()
     ListenHost = TEXT("127.0.0.1");
     ListenPorts = TEXT("8090,8091");
     bMultiListen = true;
+    bRequireCapabilityToken = false;
+    bAllowNonLoopback = false; // Security: default to loopback-only binding
+    // CRITICAL: Default to 0 (disabled) for development/testing - prevents rate limit disconnects during rapid API calls
+    // For production deployments, set to a reasonable limit (e.g., 600) via Project Settings or environment variables
+    MaxMessagesPerMinute = 0;
+    MaxAutomationRequestsPerMinute = 0;
+    bEnableTls = false;
+    TlsCertificatePath = TEXT("");
+    TlsPrivateKeyPath = TEXT("");
 
     // Reasonable runtime tuning defaults
     HeartbeatIntervalMs = 1000; // advertise heartbeats every 1s

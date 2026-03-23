@@ -2,7 +2,6 @@
 import { UnrealBridge } from '../unreal-bridge.js';
 import { AutomationBridge } from '../automation/index.js';
 import { ensureVector3 } from '../utils/validation.js';
-import { wasmIntegration } from '../wasm/index.js';
 import { Logger } from '../utils/logger.js';
 
 const log = new Logger('LightingTools');
@@ -68,12 +67,9 @@ export class LightingTools {
       };
 
       if (params.location) {
-        // Use WASM vectorAdd for light location processing
-        const zeroVector: [number, number, number] = [0, 0, 0];
-        const locArray = Array.isArray(params.location) ? params.location as [number, number, number] : zeroVector;
-        const processedLocation = wasmIntegration.vectorAdd(zeroVector, locArray);
-        log.debug('[WASM] Using vectorAdd for light positioning');
-        payload.location = { x: processedLocation[0], y: processedLocation[1], z: processedLocation[2] };
+        payload.location = Array.isArray(params.location)
+          ? { x: params.location[0], y: params.location[1], z: params.location[2] }
+          : params.location;
       }
 
       if (params.rotation) {
@@ -597,7 +593,7 @@ export class LightingTools {
     cubemapPath?: string;
     intensity?: number;
     recapture?: boolean;
-    location?: [number, number, number];
+    location?: [number, number, number] | { x: number; y: number; z: number };
     rotation?: [number, number, number] | { pitch: number, yaw: number, roll: number };
     realTimeCapture?: boolean;
     castShadows?: boolean;
@@ -703,11 +699,20 @@ export class LightingTools {
 
   // Setup global illumination
   async setupGlobalIllumination(params: {
-    method?: string;
+    method: string;  // NOW REQUIRED
     quality?: string;
     indirectLightingIntensity?: number;
     bounces?: number;
   }) {
+    // VALIDATE: method is now required
+    if (!params.method) {
+      return {
+        success: false,
+        error: 'MISSING_REQUIRED_PARAM',
+        message: "'method' parameter is required for setup_global_illumination"
+      };
+    }
+
     if (this.automationBridge) {
       try {
         const response = await this.automationBridge.sendAutomationRequest('setup_global_illumination', {
@@ -716,12 +721,22 @@ export class LightingTools {
           indirectLightingIntensity: params.indirectLightingIntensity,
           bounces: params.bounces
         });
-        if (response.success) return { success: true, message: 'Global illumination configured via bridge', ...(response.result || {}) };
-      } catch (_e) {
-        // Fallback to console commands
+        if (response.success) {
+          return { success: true, message: 'Global illumination configured via bridge', ...(response.result || {}) };
+        }
+        // Bridge returned failure - propagate the error, don't fall back to console
+        return {
+          success: false,
+          error: response.error || 'BRIDGE_ERROR',
+          message: response.message || 'Failed to configure global illumination via bridge'
+        };
+      } catch (e) {
+        // Connection/timeout errors - can fall back to console commands
+        log.debug(`Bridge error for setup_global_illumination, falling back to console: ${e}`);
       }
     }
 
+    // Console command fallback (only for connection issues, not validation errors)
     const commands = [];
 
     switch (params.method) {
@@ -753,8 +768,9 @@ export class LightingTools {
       commands.push(`r.Lumen.MaxReflectionBounces ${params.bounces}`);
     }
 
-    for (const cmd of commands) {
-      await this.bridge.executeConsoleCommand(cmd);
+    // Use batch execution for all console commands - significantly faster than sequential
+    if (commands.length > 0) {
+      await this.bridge.executeBatchConsoleCommands(commands);
     }
 
     return { success: true, message: 'Global illumination configured (console)' };
@@ -808,8 +824,9 @@ export class LightingTools {
       commands.push(`r.RayTracing.Shadows ${params.rayTracedShadows ? 1 : 0}`);
     }
 
-    for (const cmd of commands) {
-      await this.bridge.executeConsoleCommand(cmd);
+    // Use batch execution for all console commands - significantly faster than sequential
+    if (commands.length > 0) {
+      await this.bridge.executeBatchConsoleCommands(commands);
     }
 
     return { success: true, message: 'Shadow settings configured (console)' };
@@ -859,21 +876,32 @@ export class LightingTools {
   // Create a new level with proper lighting settings
   async createLightingEnabledLevel(params?: {
     levelName?: string;
+    path?: string;  // Direct path parameter - takes precedence over levelName
     copyActors?: boolean;
     useTemplate?: boolean;
   } | undefined) {
+    // Determine the path: use explicit path parameter, or derive from levelName
+    let path: string | undefined = params?.path;
+    if (!path && params?.levelName) {
+      path = `/Game/Maps/${params.levelName}`;
+    }
     const levelName = params?.levelName || 'LightingEnabledLevel';
 
     if (!this.automationBridge) {
       throw new Error('Automation Bridge not available. Level creation requires plugin support.');
     }
 
+    // If no path provided, generate one from levelName
+    if (!path) {
+      path = `/Game/Maps/${levelName}`;
+    }
+
     try {
       const response = await this.automationBridge.sendAutomationRequest('create_lighting_enabled_level', {
+        path,  // Always send path to C++ handler
         levelName,
         copyActors: params?.copyActors === true,
         useTemplate: params?.useTemplate === true,
-        path: params?.levelName ? `/Game/Maps/${params.levelName}` : undefined // Ensure path is sent
       }, {
         timeoutMs: 120000 // 2 minutes for level creation
       });
@@ -991,8 +1019,9 @@ export class LightingTools {
       commands.push(`r.EyeAdaptation.MaxBrightness ${params.maxBrightness}`);
     }
 
-    for (const cmd of commands) {
-      await this.bridge.executeConsoleCommand(cmd);
+    // Use batch execution for all console commands - significantly faster than sequential
+    if (commands.length > 0) {
+      await this.bridge.executeBatchConsoleCommands(commands);
     }
 
     return { success: true, message: 'Exposure settings updated (console)' };
@@ -1037,8 +1066,9 @@ export class LightingTools {
       commands.push(`r.AmbientOcclusion.Quality ${qualityValue}`);
     }
 
-    for (const cmd of commands) {
-      await this.bridge.executeConsoleCommand(cmd);
+    // Use batch execution for all console commands - significantly faster than sequential
+    if (commands.length > 0) {
+      await this.bridge.executeBatchConsoleCommands(commands);
     }
 
     return { success: true, message: 'Ambient occlusion configured (console)' };
